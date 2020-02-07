@@ -24,6 +24,8 @@ _GCC_TOPLEV_NONCANONICAL_TARGET
 
 AC_SUBST(target_noncanonical)
 
+GCC_LIBSTDCXX_RAW_CXX_FLAGS
+
 # This works around the fact that libtool configuration may change LD
 # for this particular configuration, but some shells, instead of
 # keeping the changes in LD private, export them just because LD is
@@ -166,7 +168,7 @@ AC_PATH_PROG([UNZIP], [unzip], unzip)
 # We need a jar that supports -@.  This is a GNU extension.
 if test "$JAR" != no; then
    rm -f config-test.jar
-   echo $srcdir/configure.ac | $JAR -cf@ config-test.jar
+   echo $srcdir/configure.ac | $JAR -cf@ config-test.jar >/dev/null 2>&1
    if test -f config-test.jar; then
      rm -f config-test.jar
    else
@@ -214,6 +216,16 @@ if test -z "$libgcj_ld_symbolic"; then
   libgcj_ld_symbolic=$SYMBOLIC_LDFLAGS
 fi
 
+# for windows native targets enforce export of all symbols for shared libgcj.
+libgcj_ld_export_all=
+case "$host" in
+      *mingw*)
+	libgcj_ld_export_all=-Wl,--export-all-symbols
+	;;
+      *)
+        ;;
+esac
+
 LIBGCJ_CFLAGS="${libgcj_cflags}"
 LIBGCJ_CXXFLAGS="${libgcj_cxxflags}"
 LIBGCJ_JAVAFLAGS="${libgcj_javaflags}"
@@ -221,6 +233,7 @@ LIBGCJ_SUBLIB_LTFLAGS="${libgcj_sublib_ltflags}"
 LIBGCJ_SUBLIB_CORE_EXTRA_DEPS="${libgcj_sublib_core_extra_deps}"
 LIBGCJ_LD_SYMBOLIC="${libgcj_ld_symbolic}"
 LIBGCJ_LD_SYMBOLIC_FUNCTIONS="${libgcj_ld_symbolic_functions}"
+LIBGCJ_LD_EXPORT_ALL="${libgcj_ld_export_all}"
 AC_SUBST(LIBGCJ_CFLAGS)
 AC_SUBST(LIBGCJ_CXXFLAGS)
 AC_SUBST(LIBGCJ_JAVAFLAGS)
@@ -228,6 +241,7 @@ AC_SUBST(LIBGCJ_SUBLIB_LTFLAGS)
 AC_SUBST(LIBGCJ_SUBLIB_CORE_EXTRA_DEPS)
 AC_SUBST(LIBGCJ_LD_SYMBOLIC)
 AC_SUBST(LIBGCJ_LD_SYMBOLIC_FUNCTIONS)
+AC_SUBST(LIBGCJ_LD_EXPORT_ALL)
 
 # Only use libltdl for non-newlib builds.
 if test "x${with_newlib}" = "x" || test "x${with_newlib}" = "xno"; then
@@ -457,7 +471,7 @@ case "${which_gcj}" in
    cross)
       if test "x${with_newlib}" = "xyes"; then
          # FIXME (comment): Why is this needed?
-         GCC_UNWIND_INCLUDE=
+         LIBGCC_UNWIND_INCLUDE=
       fi
       GCJH='$(target_noncanonical)-gcjh'
    ;;
@@ -886,13 +900,8 @@ case "${host}" in
         SYSTEMSPEC="-lunicows $SYSTEMSPEC"
       fi
     ;;
-    *-*-darwin9*)
+    *-*-darwin[[912]]*)
       SYSTEMSPEC="%{!Zdynamiclib:%{!Zbundle:-allow_stack_execute}}"
-    ;;
-    *-*-darwin[[12]]*)
-      # Something is incompatible with pie, would be nice to fix it and
-      # remove -no_pie.  PR49461
-      SYSTEMSPEC="-no_pie %{!Zdynamiclib:%{!Zbundle:-allow_stack_execute}}"
     ;;
     *)
       SYSTEMSPEC=
@@ -924,7 +933,7 @@ case "${host}" in
     # on Darwin -single_module speeds up loading of the dynamic libraries.
     extra_ldflags_libjava=-Wl,-single_module
     ;;
-arm*linux*eabi)
+arm*-*-linux-*)
     # Some of the ARM unwinder code is actually in libstdc++.  We
     # could in principle replicate it in libgcj, but it's better to
     # have a dependency on libstdc++.
@@ -934,6 +943,9 @@ arm*linux*eabi)
     ;;
 *-*-cygwin)
     extra_ldflags_libjava=-liconv
+    ;;
+*-*-mingw*)
+    extra_ldflags_libjava=-lws2_32
     ;;
 esac
 
@@ -951,17 +963,9 @@ esac
 AC_CACHE_CHECK([for --no-merge-exidx-entries], [libgcj_cv_exidx],
   [saved_ldflags="$LDFLAGS"
    LDFLAGS="${LDFLAGS} -Wl,--no-merge-exidx-entries"
-   # The IRIX 6 ld doesn't recognize --no-merge-exidx-entries, but only
-   # warns about unknown options, which breaks the testsuite.  So enable
-   # AC_LANG_WERROR, but there's currently (autoconf 2.64) no way to turn
-   # it off again.  As a workaround, save and restore werror flag like
-   # AC_PATH_XTRA.
-   ac_xsave_[]_AC_LANG_ABBREV[]_werror_flag=$ac_[]_AC_LANG_ABBREV[]_werror_flag
-   AC_LANG_WERROR
    AC_LINK_IFELSE([int main(void){ return 0;} ],
 		      [eval "libgcj_cv_exidx=yes"],
 		      [eval "libgcj_cv_exidx=no"])
-   ac_[]_AC_LANG_ABBREV[]_werror_flag=$ac_xsave_[]_AC_LANG_ABBREV[]_werror_flag
    LDFLAGS="${saved_ldflags}"]
 )
 if test "${libgcj_cv_exidx}" = "yes"; then
@@ -1028,7 +1032,7 @@ case "$THREADS" in
  no | none | single)
     THREADS=none
     ;;
- aix | posix | posix95 | pthreads)
+ aix | posix | pthreads)
     THREADS=posix
     case "$host" in
      *-*-linux*)
@@ -1038,7 +1042,7 @@ case "$THREADS" in
     ;;
  win32)
     ;;
- decosf1 | irix | mach | os2 | solaris | dce | vxworks)
+ dce | vxworks)
     AC_MSG_ERROR(thread package $THREADS not yet supported)
     ;;
  *)
@@ -1078,22 +1082,14 @@ case "$THREADS" in
 	THREADLDFLAGS=-pthread
 	THREADSPEC=-lpthread
 	;;
-     alpha*-dec-osf* | hppa*-hp-hpux*)
+     hppa*-hp-hpux*)
 	THREADCXXFLAGS=-pthread
 	# boehm-gc needs some functions from librt, so link that too.
 	THREADLIBS='-lpthread -lrt'
 	THREADSPEC='-lpthread -lrt'
 	;;
-     *-*-solaris2.8)
-	# Always use alternate thread library on Solaris 8.  Need libthread
-	# for TLS support.
-	# Need -Wl,-R to get it through libtool ...
-	THREADLIBS='-L/usr/lib/lwp$(MULTISUBDIR) -Wl,-R -Wl,/usr/lib/lwp$(MULTISUBDIR) -lpthread -lthread'
-	# ... while ld only accepts -R.
-	THREADSPEC='-L/usr/lib/lwp%{m64:/64} -R/usr/lib/lwp%{m64:/64} -lpthread -lthread'
-        ;;
      *-*-solaris2.9)
-	# As on Solaris 8, need libthread for TLS support.
+	# Need libthread for TLS support.
 	THREADLIBS='-lpthread -lthread'
 	THREADSPEC='-lpthread -lthread'
 	;;
@@ -1194,8 +1190,8 @@ AC_SUBST(HASH_SYNC_SPEC)
 
 AM_CONDITIONAL(USING_GCC, test "$GCC" = yes)
 
-# We're in the tree with gcc, and need to include some of its headers.
-GCC_UNWIND_INCLUDE='-I$(multi_basedir)/./libjava/../gcc'
+# We're in the tree with libgcc, and need to include some of its headers.
+LIBGCC_UNWIND_INCLUDE='-I$(multi_basedir)/./libjava/../libgcc'
 
 if test "x${with_newlib}" = "xyes"; then
    # We are being configured with a cross compiler.  AC_REPLACE_FUNCS
@@ -1471,10 +1467,6 @@ else
    # requires -ldl.
    if test "$GC" = boehm; then
       case "${host}" in
-          mips-sgi-irix6*)
-	    # While IRIX 6 has libdl for the O32 and N32 ABIs, the N64 one is
-	    # missing.  It's unnecessary anyway since dlopen lives in libc.
-	    ;;
 	  *-*-darwin*)
 	    ;;
 	  *)
@@ -1559,7 +1551,7 @@ AM_CONDITIONAL(NATIVE, test "$NATIVE" = yes)
 AM_CONDITIONAL(ENABLE_SHARED, test "$enable_shared" = yes)
 AM_CONDITIONAL(NEEDS_DATA_START, test "$NEEDS_DATA_START" = yes && test "$NATIVE" = yes)
 AM_CONDITIONAL(INSTALL_BINARIES, test -z "${with_multisubdir}")
-AC_SUBST(GCC_UNWIND_INCLUDE)
+AC_SUBST(LIBGCC_UNWIND_INCLUDE)
 
 # Process the option "--enable-version-specific-runtime-libs"
 # Calculate toolexeclibdir
@@ -1604,15 +1596,7 @@ AC_DEFINE_UNQUOTED(GCJVERSION, "$GCJVERSION", [Short GCJ version ID])
 # Determine where the standard .db file and GNU Classpath JNI
 # libraries are found.
 gcjsubdir=gcj-$gcjversion-$libgcj_soversion
-multi_os_directory=`$CC -print-multi-os-directory`
-case $multi_os_directory in
-  .)
-   dbexecdir='$(libdir)/'$gcjsubdir # Avoid /.
-   ;;
-  *)
-   dbexecdir='$(libdir)/'$multi_os_directory/$gcjsubdir
-   ;;
-esac
+dbexecdir='$(toolexeclibdir)/'$gcjsubdir
 AC_SUBST(dbexecdir)
 AC_SUBST(gcjsubdir)
 
@@ -1626,7 +1610,7 @@ TL_AC_GXX_INCLUDE_DIR
 # BSD_COMP is defined; just including sys/filio.h is simpler.
 # We avoid AC_HEADER_DIRENT since we really only care about dirent.h
 # for now.  If you change this, you also must update natFile.cc.
-AC_CHECK_HEADERS([unistd.h bstring.h sys/time.h sys/types.h fcntl.h \
+AC_CHECK_HEADERS([unistd.h sys/time.h sys/types.h fcntl.h \
 		  sys/ioctl.h sys/filio.h sys/stat.h sys/select.h \
 		  sys/socket.h netinet/in.h arpa/inet.h netdb.h \
 		  pwd.h sys/config.h stdint.h langinfo.h locale.h \
@@ -1722,11 +1706,12 @@ SYSDEP_SOURCES=
 SIGNAL_HANDLER_AUX=
 
 case "${host}" in
+ *-*-solaris2*)
+    SIGNAL_HANDLER=include/posix-signal.h
+    ;;
  i?86-*-linux*)
     SIGNAL_HANDLER=include/i386-signal.h
-    ;;
- *-*-solaris2*)
-    SIGNAL_HANDLER=include/solaris-signal.h
+    SIGNAL_HANDLER_AUX=include/x86_64-signal.h
     ;;
 # ia64-*)
 #    SYSDEP_SOURCES=sysdep/ia64.c
@@ -1814,7 +1799,7 @@ AC_CACHE_CHECK([whether ld supports anonymous version scripts],
      AS_HELP_STRING([--disable-symvers],
 		    [disable symbol versioning for libjava]),
        [case "$enableval" in
-         yes) libjava_cv_anon_version_script=yes ;;
+         yes|gnu*) libjava_cv_anon_version_script=yes ;;
          no)  libjava_cv_anon_version_script=no ;;
          *)   AC_MSG_ERROR([Unknown argument to enable/disable symvers]);;
         esac],

@@ -6,18 +6,17 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2009, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
 -- ware  Foundation;  either version 3,  or (at your option) any later ver- --
 -- sion.  GNAT is distributed in the hope that it will be useful, but WITH- --
 -- OUT ANY WARRANTY;  without even the  implied warranty of MERCHANTABILITY --
--- or FITNESS FOR A PARTICULAR PURPOSE.                                     --
---                                                                          --
--- You should have received a copy of the GNU General Public License along  --
--- with this program; see file COPYING3.  If not see                        --
--- <http://www.gnu.org/licenses/>.                                          --
+-- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
+-- for  more details.  You should have  received  a copy of the GNU General --
+-- Public License  distributed with GNAT; see file COPYING3.  If not, go to --
+-- http://www.gnu.org/licenses for a complete copy of the license.          --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -32,10 +31,10 @@ package Exp_Ch11 is
    procedure Expand_N_Exception_Declaration          (N : Node_Id);
    procedure Expand_N_Handled_Sequence_Of_Statements (N : Node_Id);
    procedure Expand_N_Raise_Constraint_Error         (N : Node_Id);
+   procedure Expand_N_Raise_Expression               (N : Node_Id);
    procedure Expand_N_Raise_Program_Error            (N : Node_Id);
    procedure Expand_N_Raise_Statement                (N : Node_Id);
    procedure Expand_N_Raise_Storage_Error            (N : Node_Id);
-   procedure Expand_N_Subprogram_Info                (N : Node_Id);
 
    --  Data structures for gathering information to build exception tables
    --  See runtime routine Ada.Exceptions for full details on the format and
@@ -78,6 +77,11 @@ package Exp_Ch11 is
    --  a goto statement. The argument is the reason code which would be used
    --  to determine which Rcheck_nn procedure to call. The returned result is
    --  the exception entity to be passed to Local_Raise.
+
+   procedure Get_RT_Exception_Name (Code : RT_Exception_Code);
+   --  This procedure is provided for use by the back end to obtain the name of
+   --  the Rcheck procedure for Code. The name is appended to Namet.Name_Buffer
+   --  without the __gnat_rcheck_ prefix.
 
    function Is_Non_Ada_Error (E : Entity_Id) return Boolean;
    --  This function is provided for Gigi use. It returns True if operating on

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                  B o d y                                 --
 --                                                                          --
---         Copyright (C) 1992-2009, Free Software Foundation, Inc.          --
+--         Copyright (C) 1992-2013, Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -476,7 +476,11 @@ package body System.Interrupts is
    -- Install_Restricted_Handlers --
    ---------------------------------
 
-   procedure Install_Restricted_Handlers (Handlers : New_Handler_Array) is
+   procedure Install_Restricted_Handlers
+      (Prio     : Any_Priority;
+       Handlers : New_Handler_Array)
+   is
+      pragma Unreferenced (Prio);
    begin
       for N in Handlers'Range loop
          Attach_Handler (Handlers (N).Handler, Handlers (N).Interrupt, True);
@@ -1025,7 +1029,9 @@ package body System.Interrupts is
 
    exception
       when Standard'Abort_Signal =>
+
          --  Flush interrupt server semaphores, so they can terminate
+
          Finalize_Interrupt_Servers;
          raise;
    end Interrupt_Manager;

@@ -1,5 +1,4 @@
-/* Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+/* Copyright (C) 2002-2014 Free Software Foundation, Inc.
    Contributed by Andy Vaught
    Namelist output contributed by Paul Thomas
    F2003 I/O support contributed by Jerry DeLisle
@@ -32,7 +31,6 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <errno.h>
 #define star_fill(p, n) memset(p, '*', n)
 
@@ -41,15 +39,7 @@ typedef unsigned char uchar;
 /* Helper functions for character(kind=4) internal units.  These are needed
    by write_float.def.  */
 
-static inline void
-memset4 (gfc_char4_t *p, gfc_char4_t c, int k)
-{
-  int j;
-  for (j = 0; j < k; j++)
-    *p++ = c;
-}
-
-static inline void
+static void
 memcpy4 (gfc_char4_t *dest, const char *source, int k)
 {
   int j;
@@ -1155,35 +1145,35 @@ write_z (st_parameter_dt *dtp, const fnode *f, const char *source, int len)
 void
 write_d (st_parameter_dt *dtp, const fnode *f, const char *p, int len)
 {
-  write_float (dtp, f, p, len);
+  write_float (dtp, f, p, len, 0);
 }
 
 
 void
 write_e (st_parameter_dt *dtp, const fnode *f, const char *p, int len)
 {
-  write_float (dtp, f, p, len);
+  write_float (dtp, f, p, len, 0);
 }
 
 
 void
 write_f (st_parameter_dt *dtp, const fnode *f, const char *p, int len)
 {
-  write_float (dtp, f, p, len);
+  write_float (dtp, f, p, len, 0);
 }
 
 
 void
 write_en (st_parameter_dt *dtp, const fnode *f, const char *p, int len)
 {
-  write_float (dtp, f, p, len);
+  write_float (dtp, f, p, len, 0);
 }
 
 
 void
 write_es (st_parameter_dt *dtp, const fnode *f, const char *p, int len)
 {
-  write_float (dtp, f, p, len);
+  write_float (dtp, f, p, len, 0);
 }
 
 
@@ -1322,24 +1312,32 @@ write_integer (st_parameter_dt *dtp, const char *source, int length)
 /* Write a list-directed string.  We have to worry about delimiting
    the strings if the file has been opened in that mode.  */
 
+#define DELIM 1
+#define NODELIM 0
+
 static void
-write_character (st_parameter_dt *dtp, const char *source, int kind, int length)
+write_character (st_parameter_dt *dtp, const char *source, int kind, int length, int mode)
 {
   int i, extra;
   char *p, d;
 
-  switch (dtp->u.p.current_unit->delim_status)
+  if (mode == DELIM)
     {
-    case DELIM_APOSTROPHE:
-      d = '\'';
-      break;
-    case DELIM_QUOTE:
-      d = '"';
-      break;
-    default:
-      d = ' ';
-      break;
+      switch (dtp->u.p.current_unit->delim_status)
+	{
+	case DELIM_APOSTROPHE:
+	  d = '\'';
+	  break;
+	case DELIM_QUOTE:
+	  d = '"';
+	  break;
+	default:
+	  d = ' ';
+	  break;
+	}
     }
+  else
+    d = ' ';
 
   if (kind == 1)
     {
@@ -1432,8 +1430,8 @@ set_fnode_default (st_parameter_dt *dtp, fnode *f, int length)
   switch (length)
     {
     case 4:
-      f->u.real.w = 15;
-      f->u.real.d = 8;
+      f->u.real.w = 16;
+      f->u.real.d = 9;
       f->u.real.e = 2;
       break;
     case 8:
@@ -1442,13 +1440,13 @@ set_fnode_default (st_parameter_dt *dtp, fnode *f, int length)
       f->u.real.e = 3;
       break;
     case 10:
-      f->u.real.w = 29;
-      f->u.real.d = 20;
+      f->u.real.w = 30;
+      f->u.real.d = 21;
       f->u.real.e = 4;
       break;
     case 16:
-      f->u.real.w = 44;
-      f->u.real.d = 35;
+      f->u.real.w = 45;
+      f->u.real.d = 36;
       f->u.real.e = 4;
       break;
     default:
@@ -1456,10 +1454,18 @@ set_fnode_default (st_parameter_dt *dtp, fnode *f, int length)
       break;
     }
 }
-/* Output a real number with default format.
-   This is 1PG14.7E2 for REAL(4), 1PG23.15E3 for REAL(8),
-   1PG28.19E4 for REAL(10) and 1PG43.34E4 for REAL(16).  */
-// FX -- FIXME: should we change the default format for __float128-real(16)?
+
+/* Output a real number with default format.  To guarantee that a
+   binary -> decimal -> binary roundtrip conversion recovers the
+   original value, IEEE 754-2008 requires 9, 17, 21 and 36 significant
+   digits for REAL kinds 4, 8, 10, and 16, respectively. Thus, we use
+   1PG16.9E2 for REAL(4), 1PG25.17E3 for REAL(8), 1PG30.21E4 for
+   REAL(10) and 1PG45.36E4 for REAL(16). The exception is that the
+   Fortran standard requires outputting an extra digit when the scale
+   factor is 1 and when the magnitude of the value is such that E
+   editing is used. However, gfortran compensates for this, and thus
+   for list formatted the same number of significant digits is
+   generated both when using F and E editing.  */
 
 void
 write_real (st_parameter_dt *dtp, const char *source, int length)
@@ -1468,20 +1474,30 @@ write_real (st_parameter_dt *dtp, const char *source, int length)
   int org_scale = dtp->u.p.scale_factor;
   dtp->u.p.scale_factor = 1;
   set_fnode_default (dtp, &f, length);
-  write_float (dtp, &f, source , length);
+  write_float (dtp, &f, source , length, 1);
   dtp->u.p.scale_factor = org_scale;
 }
 
+/* Similar to list formatted REAL output, for kPG0 where k > 0 we
+   compensate for the extra digit.  */
 
 void
 write_real_g0 (st_parameter_dt *dtp, const char *source, int length, int d)
 {
-  fnode f ;
+  fnode f;
+  int comp_d; 
   set_fnode_default (dtp, &f, length);
   if (d > 0)
     f.u.real.d = d;
+
+  /* Compensate for extra digits when using scale factor, d is not
+     specified, and the magnitude is such that E editing is used.  */
+  if (dtp->u.p.scale_factor > 0 && d == 0)
+    comp_d = 1;
+  else
+    comp_d = 0;
   dtp->u.p.g0_no_blanks = 1;
-  write_float (dtp, &f, source , length);
+  write_float (dtp, &f, source , length, comp_d);
   dtp->u.p.g0_no_blanks = 0;
 }
 
@@ -1543,7 +1559,8 @@ list_formatted_write_scalar (st_parameter_dt *dtp, bt type, void *p, int kind,
   else
     {
       if (type != BT_CHARACTER || !dtp->u.p.char_flag ||
-	dtp->u.p.current_unit->delim_status != DELIM_NONE)
+	  (dtp->u.p.current_unit->delim_status != DELIM_NONE
+	   && dtp->u.p.current_unit->delim_status != DELIM_UNSPECIFIED))
       write_separator (dtp);
     }
 
@@ -1556,7 +1573,7 @@ list_formatted_write_scalar (st_parameter_dt *dtp, bt type, void *p, int kind,
       write_logical (dtp, p, kind);
       break;
     case BT_CHARACTER:
-      write_character (dtp, p, kind, size);
+      write_character (dtp, p, kind, size, DELIM);
       break;
     case BT_REAL:
       write_real (dtp, p, kind);
@@ -1620,9 +1637,9 @@ namelist_write_newline (st_parameter_dt *dtp)
   if (!is_internal_unit (dtp))
     {
 #ifdef HAVE_CRLF
-      write_character (dtp, "\r\n", 1, 2);
+      write_character (dtp, "\r\n", 1, 2, NODELIM);
 #else
-      write_character (dtp, "\n", 1, 1);
+      write_character (dtp, "\n", 1, 1, NODELIM);
 #endif
       return;
     }
@@ -1667,7 +1684,7 @@ namelist_write_newline (st_parameter_dt *dtp)
 	}
     }
   else
-    write_character (dtp, " ", 1, 1);
+    write_character (dtp, " ", 1, 1, NODELIM);
 }
 
 
@@ -1689,13 +1706,13 @@ nml_write_obj (st_parameter_dt *dtp, namelist_info * obj, index_type offset,
   char cup;
   char * obj_name;
   char * ext_name;
+  size_t ext_name_len;
   char rep_buff[NML_DIGITS];
   namelist_info * cmp;
   namelist_info * retval = obj->next;
   size_t base_name_len;
   size_t base_var_name_len;
   size_t tot_len;
-  unit_delim tmp_delim;
   
   /* Set the character to be used to separate values
      to a comma or semi-colon.  */
@@ -1709,7 +1726,7 @@ nml_write_obj (st_parameter_dt *dtp, namelist_info * obj, index_type offset,
   if (obj->type != BT_DERIVED)
     {
       namelist_write_newline (dtp);
-      write_character (dtp, " ", 1, 1);
+      write_character (dtp, " ", 1, 1, NODELIM);
 
       len = 0;
       if (base)
@@ -1719,16 +1736,16 @@ nml_write_obj (st_parameter_dt *dtp, namelist_info * obj, index_type offset,
 	  for (dim_i = 0; dim_i < base_name_len; dim_i++)
             {
 	      cup = toupper ((int) base_name[dim_i]);
-	      write_character (dtp, &cup, 1, 1);
+	      write_character (dtp, &cup, 1, 1, NODELIM);
             }
 	}
       clen = strlen (obj->var_name);
       for (dim_i = len; dim_i < clen; dim_i++)
 	{
 	  cup = toupper ((int) obj->var_name[dim_i]);
-	  write_character (dtp, &cup, 1, 1);
+	  write_character (dtp, &cup, 1, 1, NODELIM);
 	}
-      write_character (dtp, "=", 1, 1);
+      write_character (dtp, "=", 1, 1, NODELIM);
     }
 
   /* Counts the number of data output on a line, including names.  */
@@ -1797,8 +1814,8 @@ nml_write_obj (st_parameter_dt *dtp, namelist_info * obj, index_type offset,
 	{
 	  if (rep_ctr > 1)
 	    {
-	      sprintf(rep_buff, " %d*", rep_ctr);
-	      write_character (dtp, rep_buff, 1, strlen (rep_buff));
+	      snprintf(rep_buff, NML_DIGITS, " %d*", rep_ctr);
+	      write_character (dtp, rep_buff, 1, strlen (rep_buff), NODELIM);
 	      dtp->u.p.no_leading_blank = 1;
 	    }
 	  num++;
@@ -1818,13 +1835,7 @@ nml_write_obj (st_parameter_dt *dtp, namelist_info * obj, index_type offset,
               break;
 
 	    case BT_CHARACTER:
-	      tmp_delim = dtp->u.p.current_unit->delim_status;
-	      if (dtp->u.p.nml_delim == '"')
-		dtp->u.p.current_unit->delim_status = DELIM_QUOTE;
-	      if (dtp->u.p.nml_delim == '\'')
-		dtp->u.p.current_unit->delim_status = DELIM_APOSTROPHE;
-	      write_character (dtp, p, 1, obj->string_length);
-		dtp->u.p.current_unit->delim_status = tmp_delim;
+	      write_character (dtp, p, 1, obj->string_length, DELIM);
               break;
 
 	    case BT_REAL:
@@ -1851,11 +1862,9 @@ nml_write_obj (st_parameter_dt *dtp, namelist_info * obj, index_type offset,
 
 	      base_name_len = base_name ? strlen (base_name) : 0;
 	      base_var_name_len = base ? strlen (base->var_name) : 0;
-	      ext_name = (char*)get_mem ( base_name_len
-					+ base_var_name_len
-					+ strlen (obj->var_name)
-					+ obj->var_rank * NML_DIGITS
-					+ 1);
+	      ext_name_len = base_name_len + base_var_name_len 
+		+ strlen (obj->var_name) + obj->var_rank * NML_DIGITS + 1;
+	      ext_name = (char*)xmalloc (ext_name_len);
 
 	      memcpy (ext_name, base_name, base_name_len);
 	      clen = strlen (obj->var_name + base_var_name_len);
@@ -1872,7 +1881,8 @@ nml_write_obj (st_parameter_dt *dtp, namelist_info * obj, index_type offset,
 		      ext_name[tot_len] = '(';
 		      tot_len++;
 		    }
-		  sprintf (ext_name + tot_len, "%d", (int) obj->ls[dim_i].idx);
+		  snprintf (ext_name + tot_len, ext_name_len - tot_len, "%d", 
+			    (int) obj->ls[dim_i].idx);
 		  tot_len += strlen (ext_name + tot_len);
 		  ext_name[tot_len] = ((int) dim_i == obj->var_rank - 1) ? ')' : ',';
 		  tot_len++;
@@ -1883,7 +1893,7 @@ nml_write_obj (st_parameter_dt *dtp, namelist_info * obj, index_type offset,
 	      /* Now obj_name.  */
 
 	      obj_name_len = strlen (obj->var_name) + 1;
-	      obj_name = get_mem (obj_name_len+1);
+	      obj_name = xmalloc (obj_name_len+1);
 	      memcpy (obj_name, obj->var_name, obj_name_len-1);
 	      memcpy (obj_name + obj_name_len-1, "%", 2);
 
@@ -1913,12 +1923,20 @@ nml_write_obj (st_parameter_dt *dtp, namelist_info * obj, index_type offset,
 	     to column 2. Reset the repeat counter.  */
 
 	  dtp->u.p.no_leading_blank = 0;
-	  write_character (dtp, &semi_comma, 1, 1);
+	  if (obj->type == BT_CHARACTER)
+	    {
+	      if (dtp->u.p.nml_delim != '\0')
+		write_character (dtp, &semi_comma, 1, 1, NODELIM);
+	    }
+	  else
+	    write_character (dtp, &semi_comma, 1, 1, NODELIM);
 	  if (num > 5)
 	    {
 	      num = 0;
+	      if (dtp->u.p.nml_delim == '\0')
+		write_character (dtp, &semi_comma, 1, 1, NODELIM);
 	      namelist_write_newline (dtp);
-	      write_character (dtp, " ", 1, 1);
+	      write_character (dtp, " ", 1, 1, NODELIM);
 	    }
 	  rep_ctr = 1;
 	}
@@ -1927,17 +1945,17 @@ nml_write_obj (st_parameter_dt *dtp, namelist_info * obj, index_type offset,
 
 obj_loop:
 
-    nml_carry = 1;
-    for (dim_i = 0; nml_carry && (dim_i < (size_t) obj->var_rank); dim_i++)
-      {
-	obj->ls[dim_i].idx += nml_carry ;
-	nml_carry = 0;
- 	if (obj->ls[dim_i].idx  > (ssize_t) GFC_DESCRIPTOR_UBOUND(obj,dim_i))
-	  {
- 	    obj->ls[dim_i].idx = GFC_DESCRIPTOR_LBOUND(obj,dim_i);
-	    nml_carry = 1;
-	  }
-       }
+      nml_carry = 1;
+      for (dim_i = 0; nml_carry && (dim_i < (size_t) obj->var_rank); dim_i++)
+	{
+	  obj->ls[dim_i].idx += nml_carry ;
+	  nml_carry = 0;
+	  if (obj->ls[dim_i].idx  > GFC_DESCRIPTOR_UBOUND(obj,dim_i))
+	    {
+	      obj->ls[dim_i].idx = GFC_DESCRIPTOR_LBOUND(obj,dim_i);
+	      nml_carry = 1;
+	    }
+	 }
     }
 
   /* Return a pointer beyond the furthest object accessed.  */
@@ -1959,23 +1977,28 @@ namelist_write (st_parameter_dt *dtp)
   index_type dummy_offset = 0;
   char c;
   char * dummy_name = NULL;
-  unit_delim tmp_delim = DELIM_UNSPECIFIED;
 
   /* Set the delimiter for namelist output.  */
-  tmp_delim = dtp->u.p.current_unit->delim_status;
+  switch (dtp->u.p.current_unit->delim_status)
+    {
+      case DELIM_APOSTROPHE:
+        dtp->u.p.nml_delim = '\'';
+	break;
+      case DELIM_QUOTE:
+      case DELIM_UNSPECIFIED:
+	dtp->u.p.nml_delim = '"';
+	break;
+      default:
+	dtp->u.p.nml_delim = '\0';
+    }
 
-  dtp->u.p.nml_delim = tmp_delim == DELIM_APOSTROPHE ? '\'' : '"';
-
-  /* Temporarily disable namelist delimters.  */
-  dtp->u.p.current_unit->delim_status = DELIM_NONE;
-
-  write_character (dtp, "&", 1, 1);
+  write_character (dtp, "&", 1, 1, NODELIM);
 
   /* Write namelist name in upper case - f95 std.  */
   for (i = 0 ;i < dtp->namelist_name_len ;i++ )
     {
       c = toupper ((int) dtp->namelist_name[i]);
-      write_character (dtp, &c, 1 ,1);
+      write_character (dtp, &c, 1 ,1, NODELIM);
     }
 
   if (dtp->u.p.ionml != NULL)
@@ -1989,9 +2012,7 @@ namelist_write (st_parameter_dt *dtp)
     }
 
   namelist_write_newline (dtp);
-  write_character (dtp, " /", 1, 2);
-  /* Restore the original delimiter.  */
-  dtp->u.p.current_unit->delim_status = tmp_delim;
+  write_character (dtp, " /", 1, 2, NODELIM);
 }
 
 #undef NML_DIGITS

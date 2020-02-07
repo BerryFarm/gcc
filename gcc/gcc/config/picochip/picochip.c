@@ -1,5 +1,5 @@
 /* Subroutines used for code generation on picoChip processors.
-   Copyright (C) 2001, 2008, 2009, 2010   Free Software Foundation, Inc.
+   Copyright (C) 2001-2014 Free Software Foundation, Inc.
    Contributed by Picochip Ltd. (http://www.picochip.com)
    Maintained by Daniel Towner (daniel.towner@picochip.com) and
    Hariharan Sandanagobalane (hariharan@picochip.com)
@@ -34,13 +34,16 @@ along with GCC; see the file COPYING3.  If not, see
 #include "recog.h"
 #include "obstack.h"
 #include "tree.h"
+#include "calls.h"
+#include "stor-layout.h"
+#include "stringpool.h"
+#include "varasm.h"
 #include "expr.h"
 #include "optabs.h"
 #include "except.h"
 #include "function.h"
 #include "output.h"
 #include "basic-block.h"
-#include "integrate.h"
 #include "diagnostic-core.h"
 #include "ggc.h"
 #include "hashtab.h"
@@ -61,6 +64,7 @@ along with GCC; see the file COPYING3.  If not, see
 #include "timevar.h"		/* For TV_SCHED2, in picochip_reorg. */
 #include "libfuncs.h"		/* For memcpy_libfuncs, etc. */
 #include "df.h"			/* For df_regs_ever_live_df_regs_ever_live_pp, etc. */
+#include "dbxout.h"
 
 
 /* Target AE ISA information. */
@@ -77,16 +81,16 @@ void picochip_asm_file_end (void);
 void picochip_init_libfuncs (void);
 void picochip_reorg (void);
 
-int picochip_arg_partial_bytes (CUMULATIVE_ARGS * p_cum,
+int picochip_arg_partial_bytes (cumulative_args_t p_cum,
 				       enum machine_mode mode,
 				       tree type, bool named);
-rtx picochip_function_arg (CUMULATIVE_ARGS * p_cum,
+rtx picochip_function_arg (cumulative_args_t p_cum,
 			   enum machine_mode mode,
 			   const_tree type, bool named);
-rtx picochip_incoming_function_arg (CUMULATIVE_ARGS * p_cum,
+rtx picochip_incoming_function_arg (cumulative_args_t p_cum,
 				    enum machine_mode mode,
 				    const_tree type, bool named);
-void picochip_arg_advance (CUMULATIVE_ARGS * p_cum, enum machine_mode mode,
+void picochip_arg_advance (cumulative_args_t p_cum, enum machine_mode mode,
 			   const_tree type, bool named);
 unsigned int picochip_function_arg_boundary (enum machine_mode mode,
 					     const_tree type);
@@ -101,7 +105,8 @@ int picochip_sched_reorder (FILE * file, int verbose, rtx * ready,
 void picochip_init_builtins (void);
 rtx picochip_expand_builtin (tree, rtx, rtx, enum machine_mode, int);
 
-bool picochip_rtx_costs (rtx x, int code, int outer_code, int* total, bool speed);
+bool picochip_rtx_costs (rtx x, int code, int outer_code, int opno,
+			 int* total, bool speed);
 bool picochip_return_in_memory(const_tree type,
                               const_tree fntype ATTRIBUTE_UNUSED);
 bool picochip_legitimate_address_p (enum machine_mode, rtx, bool);
@@ -187,18 +192,11 @@ struct vliw_state picochip_current_vliw_state;
 
 /* Save/restore recog_data. */
 static int picochip_saved_which_alternative;
-static struct recog_data picochip_saved_recog_data;
+static struct recog_data_d picochip_saved_recog_data;
 
 /* Determine which ALU to use for the instruction in
    picochip_current_prescan_insn. */
 static char picochip_get_vliw_alu_id (void);
-
-/* Implement TARGET_OPTION_OPTIMIZATION_TABLE.  */
-static const struct default_options picochip_option_optimization_table[] =
-  {
-    { OPT_LEVELS_1_PLUS, OPT_fomit_frame_pointer, NULL, 1 },
-    { OPT_LEVELS_NONE, 0, NULL, 0 }
-  };
 
 /* Initialize the GCC target structure.  */
 
@@ -249,9 +247,6 @@ static const struct default_options picochip_option_optimization_table[] =
 
 #undef TARGET_ASM_NAMED_SECTION
 #define TARGET_ASM_NAMED_SECTION picochip_asm_named_section
-
-#undef TARGET_HAVE_NAMED_SECTIONS
-#define TARGET_HAVE_NAMED_SECTIONS 1
 
 #undef TARGET_HAVE_SWITCHABLE_BSS_SECTIONS
 #define TARGET_HAVE_SWITCHABLE_BSS_SECTIONS 1
@@ -313,8 +308,6 @@ static const struct default_options picochip_option_optimization_table[] =
    usually requires a scratch register. */
 #undef TARGET_SECONDARY_RELOAD
 #define TARGET_SECONDARY_RELOAD picochip_secondary_reload
-#undef DONT_USE_BUILTIN_SETJMP
-#define DONT_USE_BUILTIN_SETJMP 1
 
 /* How Large Values are Returned  */
 
@@ -329,12 +322,6 @@ static const struct default_options picochip_option_optimization_table[] =
 
 #undef TARGET_OVERRIDE_OPTIONS_AFTER_CHANGE
 #define TARGET_OVERRIDE_OPTIONS_AFTER_CHANGE picochip_option_override
-
-#undef TARGET_OPTION_OPTIMIZATION_TABLE
-#define TARGET_OPTION_OPTIMIZATION_TABLE picochip_option_optimization_table
-
-#undef TARGET_EXCEPT_UNWIND_INFO
-#define TARGET_EXCEPT_UNWIND_INFO sjlj_except_unwind_info
 
 /* The 2nd scheduling pass option is switched off, and a machine
    dependent reorganisation ensures that it is run later on, after the
@@ -827,7 +814,7 @@ picochip_compute_arg_size (const_tree type, enum machine_mode mode)
   int type_size_in_units = 0;
 
   if (type)
-    type_size_in_units = tree_low_cst (TYPE_SIZE_UNIT (type), 1);
+    type_size_in_units = tree_to_uhwi (TYPE_SIZE_UNIT (type));
   else
     type_size_in_units = GET_MODE_SIZE (mode);
 
@@ -837,9 +824,10 @@ picochip_compute_arg_size (const_tree type, enum machine_mode mode)
 
 /* Determine where the next outgoing arg should be placed. */
 rtx
-picochip_function_arg (CUMULATIVE_ARGS *cum, enum machine_mode mode,
+picochip_function_arg (cumulative_args_t cum_v, enum machine_mode mode,
 		       const_tree type, bool named ATTRIBUTE_UNUSED)
 {
+  CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
   int reg = 0;
   int type_align_in_units = 0;
   int type_size_in_units;
@@ -935,7 +923,7 @@ picochip_function_arg (CUMULATIVE_ARGS *cum, enum machine_mode mode,
    passed in registers, which are then pushed onto the stack by the
    function prologue). */
 rtx
-picochip_incoming_function_arg (CUMULATIVE_ARGS *cum,
+picochip_incoming_function_arg (cumulative_args_t cum,
 				enum machine_mode mode,
 				const_tree type, bool named)
 {
@@ -969,7 +957,7 @@ picochip_function_arg_boundary (enum machine_mode mode,
 
 /* Compute partial registers. */
 int
-picochip_arg_partial_bytes (CUMULATIVE_ARGS * p_cum, enum machine_mode mode,
+picochip_arg_partial_bytes (cumulative_args_t p_cum, enum machine_mode mode,
 			    tree type, bool named ATTRIBUTE_UNUSED)
 {
   int type_align_in_units = 0;
@@ -977,7 +965,7 @@ picochip_arg_partial_bytes (CUMULATIVE_ARGS * p_cum, enum machine_mode mode,
   int new_offset = 0;
   int offset_overflow = 0;
 
-  unsigned cum = *((unsigned *) p_cum);
+  unsigned cum = *get_cumulative_args (p_cum);
 
   /* VOIDmode is passed when computing the second argument to a `call'
      pattern. This can be ignored. */
@@ -1025,9 +1013,10 @@ picochip_arg_partial_bytes (CUMULATIVE_ARGS * p_cum, enum machine_mode mode,
 
 /* Advance the cumulative args counter CUM. */
 void
-picochip_arg_advance (CUMULATIVE_ARGS *cum, enum machine_mode mode,
+picochip_arg_advance (cumulative_args_t cum_v, enum machine_mode mode,
 		      const_tree type, bool named ATTRIBUTE_UNUSED)
 {
+  CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
   int type_align_in_units = 0;
   int type_size_in_units;
   int new_offset = 0;
@@ -1150,7 +1139,7 @@ picochip_can_eliminate_link_sp_save (void)
     accesses become wrong. This wouldnt happen only if we were not using the
     stack at all. The following conditions ensures that.*/
 
-  return (current_function_is_leaf &&
+  return (crtl->is_leaf &&
           !df_regs_ever_live_p(LINK_REGNUM) &&
           !df_regs_ever_live_p(STACK_POINTER_REGNUM) &&
           (picochip_special_save_area_byte_offset() == 0) &&
@@ -1830,7 +1819,7 @@ picochip_output_frame_debug (FILE * file)
 {
   int i = 0;
 
-  if (current_function_is_leaf)
+  if (crtl->is_leaf)
     fprintf (file, "\t\t// Leaf function\n");
   else
     fprintf (file, "\t\t// Non-leaf function\n");
@@ -2112,7 +2101,7 @@ picochip_expand_prologue (void)
 
   /* Save the link registers. We could try to save just one register
      here. This would reduce the amount of stack space required.
-     There hasnt been a good reason to do that so far. */
+     There hasn't been a good reason to do that so far. */
   if (!picochip_can_eliminate_link_sp_save ())
     picochip_emit_save_register (gen_rtx_REG (SImode, LINK_REGNUM),
 				 special_save_offset);
@@ -2264,7 +2253,7 @@ picochip_expand_epilogue (int is_sibling_call ATTRIBUTE_UNUSED)
     rtvec p;
     p = rtvec_alloc (2);
 
-    RTVEC_ELT (p, 0) = gen_rtx_RETURN (VOIDmode);
+    RTVEC_ELT (p, 0) = ret_rtx;
     RTVEC_ELT (p, 1) = gen_rtx_USE (VOIDmode,
 				    gen_rtx_REG (Pmode, LINK_REGNUM));
     emit_jump_insn (gen_rtx_PARALLEL (VOIDmode, p));
@@ -3166,7 +3155,7 @@ picochip_save_recog_data (void)
 {
   picochip_saved_which_alternative = which_alternative;
   memcpy (&picochip_saved_recog_data, &recog_data,
-	  sizeof (struct recog_data));
+	  sizeof (struct recog_data_d));
 }
 
 /* Restore some of the contents of global variable recog_data. */
@@ -3175,7 +3164,7 @@ picochip_restore_recog_data (void)
 {
   which_alternative = picochip_saved_which_alternative;
   memcpy (&recog_data, &picochip_saved_recog_data,
-	  sizeof (struct recog_data));
+	  sizeof (struct recog_data_d));
 }
 
 /* Ensure that no var tracking notes are emitted in the middle of a
@@ -3185,7 +3174,7 @@ reorder_var_tracking_notes (void)
 {
   basic_block bb;
 
-  FOR_EACH_BB (bb)
+  FOR_EACH_BB_FN (bb, cfun)
     {
       rtx insn, next, last_insn = NULL_RTX;
       rtx queue = NULL_RTX;
@@ -3234,13 +3223,20 @@ reorder_var_tracking_notes (void)
                     }
                 }
             }
-          else if (NOTE_P (insn) && NOTE_KIND (insn) == NOTE_INSN_VAR_LOCATION)
+          else if (NOTE_P (insn))
             {
                rtx prev = PREV_INSN (insn);
                PREV_INSN (next) = prev;
                NEXT_INSN (prev) = next;
-               PREV_INSN (insn) = queue;
-               queue = insn;
+               /* Ignore call_arg notes. They are expected to be just after the
+                  call insn. If the call is start of a long VLIW, labels are
+                  emitted in the middle of a VLIW, which our assembler can not
+                  handle. */
+               if (NOTE_KIND (insn) != NOTE_INSN_CALL_ARG_LOCATION)
+                 {
+                   PREV_INSN (insn) = queue;
+                   queue = insn;
+                 }
             }
         }
         /* Make sure we are not dropping debug instructions.*/
@@ -3307,16 +3303,16 @@ picochip_reorg (void)
               if (GET_MODE (insn) == TImode)
               {
                 vliw_start = insn;
-                vliw_insn_location = INSN_LOCATOR (insn);
+                vliw_insn_location = INSN_LOCATION (insn);
               }
               if (JUMP_P (insn) || CALL_P(insn))
               {
-                vliw_insn_location = INSN_LOCATOR (insn);
+                vliw_insn_location = INSN_LOCATION (insn);
                 for (insn1 = vliw_start; insn1 != insn ; insn1 = next_real_insn (insn1))
-                  INSN_LOCATOR (insn1) = vliw_insn_location;
+                  INSN_LOCATION (insn1) = vliw_insn_location;
               }
               /* Tag subsequent instructions with the same location. */
-              INSN_LOCATOR (insn) = vliw_insn_location;
+              INSN_LOCATION (insn) = vliw_insn_location;
 	    }
 	}
 
@@ -3639,7 +3635,7 @@ memory_just_off (rtx opnd1, rtx opnd2)
   }
 
   /* Peepholing 2 STW/LDWs has the restriction that the resulting STL/LDL's address
-     should be 4 byte aligned. We can currently guarentee that only if the base
+     should be 4 byte aligned. We can currently guarantee that only if the base
      address is FP(R13) and the offset is aligned. */
 
   if (reg1 == reg2 && reg1 == 13 && abs(offset1-offset2) == 2 && minimum(offset1, offset2) % 4 == 0)
@@ -3669,7 +3665,7 @@ registers_just_off (rtx opnd1, rtx opnd2)
            LDL r[3:2],[r11]
 
    NOTE:
-   1. The LDWs themselves only guarentee that r11 will be a 2-byte
+   1. The LDWs themselves only guarantee that r11 will be a 2-byte
    aligned address. Only FP can be assumed to be 4 byte aligned.
    2. The progression of addresses and the register numbers should
    be similar. For eg., if you swap r2 and r3 in the above instructions,
@@ -3748,7 +3744,8 @@ gen_SImode_mem(rtx opnd1,rtx opnd2)
 }
 
 bool
-picochip_rtx_costs (rtx x, int code, int outer_code ATTRIBUTE_UNUSED, int* total, bool speed)
+picochip_rtx_costs (rtx x, int code, int outer_code ATTRIBUTE_UNUSED,
+		    int opno ATTRIBUTE_UNUSED, int* total, bool speed)
 {
 
   int localTotal = 0;
@@ -3891,7 +3888,7 @@ picochip_final_prescan_insn (rtx insn, rtx * opvec ATTRIBUTE_UNUSED,
   if (GET_MODE (insn) == TImode || !picochip_schedule_type == DFA_TYPE_SPEED)
     picochip_reset_vliw (insn);
 
-  /* No VLIW scheduling occured, so don't go any further. */
+  /* No VLIW scheduling occurred, so don't go any further. */
   if (picochip_schedule_type != DFA_TYPE_SPEED)
     return;
 
@@ -4208,18 +4205,6 @@ void
 picochip_init_builtins (void)
 {
   tree noreturn;
-  tree endlink = void_list_node;
-  tree int_endlink = tree_cons (NULL_TREE, integer_type_node, endlink);
-  tree unsigned_endlink = tree_cons (NULL_TREE, unsigned_type_node, endlink);
-  tree long_endlink = tree_cons (NULL_TREE, long_integer_type_node, endlink);
-  tree int_int_endlink =
-    tree_cons (NULL_TREE, integer_type_node, int_endlink);
-  tree int_int_int_endlink =
-    tree_cons (NULL_TREE, integer_type_node, int_int_endlink);
-  tree int_long_endlink =
-    tree_cons (NULL_TREE, integer_type_node, long_endlink);
-  tree long_int_int_int_endlink =
-    tree_cons (NULL_TREE, long_integer_type_node, int_int_int_endlink);
 
   tree int_ftype_int, int_ftype_int_int;
   tree long_ftype_int, long_ftype_int_int_int;
@@ -4228,36 +4213,51 @@ picochip_init_builtins (void)
   tree void_ftype_void, unsigned_ftype_unsigned;
 
   /* void func (void) */
-  void_ftype_void = build_function_type (void_type_node, endlink);
+  void_ftype_void = build_function_type_list (void_type_node, NULL_TREE);
 
   /* int func (int) */
-  int_ftype_int = build_function_type (integer_type_node, int_endlink);
+  int_ftype_int = build_function_type_list (integer_type_node,
+					    integer_type_node, NULL_TREE);
 
   /* unsigned int func (unsigned int) */
-  unsigned_ftype_unsigned = build_function_type (unsigned_type_node, unsigned_endlink);
+  unsigned_ftype_unsigned
+    = build_function_type_list (unsigned_type_node,
+				unsigned_type_node, NULL_TREE);
 
   /* int func(int, int) */
   int_ftype_int_int
-    = build_function_type (integer_type_node, int_int_endlink);
+    = build_function_type_list (integer_type_node,
+				integer_type_node, integer_type_node,
+				NULL_TREE);
 
   /* long func(int) */
-  long_ftype_int = build_function_type (long_integer_type_node, int_endlink);
+  long_ftype_int = build_function_type_list (long_integer_type_node,
+					     integer_type_node, NULL_TREE);
 
   /* long func(int, int, int) */
   long_ftype_int_int_int
-    = build_function_type (long_integer_type_node, int_int_int_endlink);
+    = build_function_type_list (long_integer_type_node,
+				integer_type_node, integer_type_node,
+				integer_type_node, NULL_TREE);
 
   /* int func(int, int, int) */
   int_ftype_int_int_int
-    = build_function_type (integer_type_node, int_int_int_endlink);
+    = build_function_type_list (integer_type_node,
+				integer_type_node, integer_type_node,
+				integer_type_node, NULL_TREE);
 
   /* void func(int, long) */
   void_ftype_int_long
-    = build_function_type (void_type_node, int_long_endlink);
+    = build_function_type_list (void_type_node,
+				integer_type_node, long_integer_type_node,
+				NULL_TREE);
 
   /* void func(long, int, int, int) */
   void_ftype_long_int_int_int
-    = build_function_type (void_type_node, long_int_int_int_endlink);
+    = build_function_type_list (void_type_node,
+				long_integer_type_node, integer_type_node,
+				integer_type_node, integer_type_node,
+				NULL_TREE);
 
   /* Initialise the sign-bit-count function. */
   add_builtin_function ("__builtin_sbc", int_ftype_int,
@@ -4698,6 +4698,6 @@ picochip_static_chain (const_tree ARG_UNUSED (fndecl), bool incoming_p)
   if (incoming_p)
     addr = arg_pointer_rtx;
   else
-    addr = plus_constant (stack_pointer_rtx, -2 * UNITS_PER_WORD);
+    addr = plus_constant (Pmode, stack_pointer_rtx, -2 * UNITS_PER_WORD);
   return gen_frame_mem (Pmode, addr);
 }

@@ -66,7 +66,7 @@ Import::is_archive_magic(const char* bytes)
 class Archive_file
 {
  public:
-  Archive_file(const std::string& filename, int fd, source_location location)
+  Archive_file(const std::string& filename, int fd, Location location)
     : filename_(filename), fd_(fd), filesize_(-1), extended_names_(),
       is_thin_archive_(false), location_(location), nested_archives_()
   { }
@@ -91,7 +91,7 @@ class Archive_file
   { return this->is_thin_archive_; }
 
   // Return the location of the import statement.
-  source_location
+  Location
   location() const
   { return this->location_; }
 
@@ -133,7 +133,7 @@ class Archive_file
   // Whether this is a thin archive.
   bool is_thin_archive_;
   // The location of the import statements.
-  source_location location_;
+  Location location_;
   // Table of nested archives.
   Nested_archive_table nested_archives_;
 };
@@ -261,7 +261,7 @@ Archive_file::interpret_header(const Archive_header* hdr, off_t off,
   char size_string[size_string_size + 1];
   memcpy(size_string, hdr->ar_size, size_string_size);
   char* ps = size_string + size_string_size;
-  while (ps[-1] == ' ')
+  while (ps > size_string && ps[-1] == ' ')
     --ps;
   *ps = '\0';
 
@@ -277,6 +277,7 @@ Archive_file::interpret_header(const Archive_header* hdr, off_t off,
       return false;
     }
 
+  *nested_off = 0;
   if (hdr->ar_name[0] != '/')
     {
       const char* name_end = strchr(hdr->ar_name, '/');
@@ -288,7 +289,6 @@ Archive_file::interpret_header(const Archive_header* hdr, off_t off,
 	  return false;
 	}
       pname->assign(hdr->ar_name, name_end - hdr->ar_name);
-      *nested_off = 0;
     }
   else if (hdr->ar_name[1] == ' ')
     {
@@ -327,8 +327,7 @@ Archive_file::interpret_header(const Archive_header* hdr, off_t off,
 	  return false;
 	}
       pname->assign(name, name_end - 1 - name);
-      if (nested_off != NULL)
-        *nested_off = y;
+      *nested_off = y;
     }
 
   return true;
@@ -613,7 +612,7 @@ Stream_concatenate::do_advance(size_t skip)
 
 Import::Stream*
 Import::find_archive_export_data(const std::string& filename, int fd,
-				 source_location location)
+				 Location location)
 {
   Archive_file afile(filename, fd, location);
   if (!afile.initialize())

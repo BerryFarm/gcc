@@ -1,6 +1,6 @@
 // -*- C++ -*-
 
-// Copyright (C) 2007, 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
+// Copyright (C) 2007-2014 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the terms
@@ -365,7 +365,7 @@ namespace __gnu_parallel
       typedef _PseudoSequenceIterator<_Tp, uint64_t> iterator;
 
       /** @brief Constructor.
-       *  @param _M_val Element of the sequence.
+       *  @param __val Element of the sequence.
        *  @param __count Number of (virtual) copies.
        */
       _PseudoSequence(const _Tp& __val, _DifferenceType __count)

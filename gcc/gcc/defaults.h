@@ -1,7 +1,5 @@
 /* Definitions of various defaults for tm.h macros.
-   Copyright (C) 1992, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
-   2005, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 1992-2014 Free Software Foundation, Inc.
    Contributed by Ron Guilmette (rfg@monkeys.com)
 
 This file is part of GCC.
@@ -27,6 +25,11 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 
 #ifndef GCC_DEFAULTS_H
 #define GCC_DEFAULTS_H
+
+/* How to start an assembler comment.  */
+#ifndef ASM_COMMENT_START
+#define ASM_COMMENT_START ";#"
+#endif
 
 /* Store in OUTPUT a string (made with alloca) containing an
    assembler-name for a local static variable or function named NAME.
@@ -73,7 +76,7 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 	  int c = p[i];			   				      \
 	  if (c == '\"' || c == '\\')					      \
 	    putc ('\\', asm_out_file);					      \
-	  if (ISPRINT(c))						      \
+	  if (ISPRINT (c))						      \
 	    putc (c, asm_out_file);					      \
 	  else								      \
 	    {								      \
@@ -83,7 +86,7 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 		 The VAX assembler fails to stop reading the escape	      \
 		 after three digits, so this is the only way we		      \
 		 can get it to parse the data properly.  */		      \
-	      if (i < thissize - 1 && ISDIGIT(p[i + 1]))		      \
+	      if (i < thissize - 1 && ISDIGIT (p[i + 1]))		      \
 		fprintf (asm_out_file, "\"\n\t.ascii \"");		      \
 	  }								      \
 	}								      \
@@ -137,7 +140,10 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 
 #ifndef ASM_OUTPUT_LABEL
 #define ASM_OUTPUT_LABEL(FILE,NAME) \
-  do { assemble_name ((FILE), (NAME)); fputs (":\n", (FILE)); } while (0)
+  do {						\
+    assemble_name ((FILE), (NAME));		\
+    fputs (":\n", (FILE));			\
+  } while (0)
 #endif
 
 /* This is how to output the definition of a user-level label named
@@ -160,7 +166,11 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 /* This is how to output a reference to a user-level label named NAME.  */
 
 #ifndef ASM_OUTPUT_LABELREF
-#define ASM_OUTPUT_LABELREF(FILE,NAME)  asm_fprintf ((FILE), "%U%s", (NAME))
+#define ASM_OUTPUT_LABELREF(FILE,NAME)  \
+  do {							\
+    fputs (user_label_prefix, (FILE));			\
+    fputs ((NAME), (FILE));				\
+  } while (0);
 #endif
 
 /* Allow target to print debug info labels specially.  This is useful for
@@ -320,12 +330,6 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 # endif
 #endif
 
-/* Determines whether we may use common symbols to represent one-only
-   semantics (a.k.a. "vague linkage").  */
-#ifndef USE_COMMON_FOR_ONE_ONLY
-# define USE_COMMON_FOR_ONE_ONLY 1
-#endif
-
 /* By default we can assume that all global symbols are in one namespace,
    across all shared libraries.  */
 #ifndef MULTIPLE_SYMBOL_SPACES
@@ -338,13 +342,6 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #define SUPPORTS_INIT_PRIORITY 1
 #endif /* SUPPORTS_INIT_PRIORITY */
 
-/* If duplicate library search directories can be removed from a
-   linker command without changing the linker's semantics, give this
-   symbol a nonzero.  */
-#ifndef LINK_ELIMINATE_DUPLICATE_LDIRECTORIES
-#define LINK_ELIMINATE_DUPLICATE_LDIRECTORIES 0
-#endif /* LINK_ELIMINATE_DUPLICATE_LDIRECTORIES */
-
 /* If we have a definition of INCOMING_RETURN_ADDR_RTX, assume that
    the rest of the DWARF 2 frame unwind support is also provided.  */
 #if !defined (DWARF2_UNWIND_INFO) && defined (INCOMING_RETURN_ADDR_RTX)
@@ -354,7 +351,7 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 /* If we have named sections, and we're using crtstuff to run ctors,
    use them for registering eh frame information.  */
 #if defined (TARGET_ASM_NAMED_SECTION) && DWARF2_UNWIND_INFO \
-    && !defined(EH_FRAME_IN_DATA_SECTION)
+    && !defined (EH_FRAME_IN_DATA_SECTION)
 #ifndef EH_FRAME_SECTION_NAME
 #define EH_FRAME_SECTION_NAME ".eh_frame"
 #endif
@@ -408,6 +405,26 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #define DWARF_FRAME_REGISTERS FIRST_PSEUDO_REGISTER
 #endif
 
+/* Offsets recorded in opcodes are a multiple of this alignment factor.  */
+#ifndef DWARF_CIE_DATA_ALIGNMENT
+#ifdef STACK_GROWS_DOWNWARD
+#define DWARF_CIE_DATA_ALIGNMENT (-((int) UNITS_PER_WORD))
+#else
+#define DWARF_CIE_DATA_ALIGNMENT ((int) UNITS_PER_WORD)
+#endif
+#endif
+
+/* The DWARF 2 CFA column which tracks the return address.  Normally this
+   is the column for PC, or the first column after all of the hard
+   registers.  */
+#ifndef DWARF_FRAME_RETURN_COLUMN
+#ifdef PC_REGNUM
+#define DWARF_FRAME_RETURN_COLUMN	DWARF_FRAME_REGNUM (PC_REGNUM)
+#else
+#define DWARF_FRAME_RETURN_COLUMN	DWARF_FRAME_REGISTERS
+#endif
+#endif
+
 /* How to renumber registers for dbx and gdb.  If not defined, assume
    no renumbering is necessary.  */
 
@@ -415,13 +432,44 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #define DBX_REGISTER_NUMBER(REGNO) (REGNO)
 #endif
 
+/* The mapping from gcc register number to DWARF 2 CFA column number.
+   By default, we just provide columns for all registers.  */
+#ifndef DWARF_FRAME_REGNUM
+#define DWARF_FRAME_REGNUM(REG) DBX_REGISTER_NUMBER (REG)
+#endif
+
+/* Map register numbers held in the call frame info that gcc has
+   collected using DWARF_FRAME_REGNUM to those that should be output in
+   .debug_frame and .eh_frame.  */
+#ifndef DWARF2_FRAME_REG_OUT
+#define DWARF2_FRAME_REG_OUT(REGNO, FOR_EH) (REGNO)
+#endif
+
+/* The size of addresses as they appear in the Dwarf 2 data.
+   Some architectures use word addresses to refer to code locations,
+   but Dwarf 2 info always uses byte addresses.  On such machines,
+   Dwarf 2 addresses need to be larger than the architecture's
+   pointers.  */
+#ifndef DWARF2_ADDR_SIZE
+#define DWARF2_ADDR_SIZE (POINTER_SIZE / BITS_PER_UNIT)
+#endif
+
+/* The size in bytes of a DWARF field indicating an offset or length
+   relative to a debug info section, specified to be 4 bytes in the
+   DWARF-2 specification.  The SGI/MIPS ABI defines it to be the same
+   as PTR_SIZE.  */
+#ifndef DWARF_OFFSET_SIZE
+#define DWARF_OFFSET_SIZE 4
+#endif
+
+/* The size in bytes of a DWARF 4 type signature.  */
+#ifndef DWARF_TYPE_SIGNATURE_SIZE
+#define DWARF_TYPE_SIGNATURE_SIZE 8
+#endif
+
 /* Default sizes for base C types.  If the sizes are different for
    your target, you should override these values by defining the
    appropriate symbols in your tm.h file.  */
-
-#ifndef BITS_PER_UNIT
-#define BITS_PER_UNIT 8
-#endif
 
 #ifndef BITS_PER_WORD
 #define BITS_PER_WORD (BITS_PER_UNIT * UNITS_PER_WORD)
@@ -520,6 +568,10 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 
 #ifndef SIZE_TYPE
 #define SIZE_TYPE "long unsigned int"
+#endif
+
+#ifndef SIZETYPE
+#define SIZETYPE SIZE_TYPE
 #endif
 
 #ifndef PID_TYPE
@@ -726,6 +778,11 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #define ACCUMULATE_OUTGOING_ARGS 0
 #endif
 
+/* By default, use the GNU runtime for Objective C.  */
+#ifndef NEXT_OBJC_RUNTIME
+#define NEXT_OBJC_RUNTIME 0
+#endif
+
 /* Supply a default definition for PUSH_ARGS.  */
 #ifndef PUSH_ARGS
 #ifdef PUSH_ROUNDING
@@ -882,6 +939,10 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #define FLOAT_WORDS_BIG_ENDIAN WORDS_BIG_ENDIAN
 #endif
 
+#ifndef REG_WORDS_BIG_ENDIAN
+#define REG_WORDS_BIG_ENDIAN WORDS_BIG_ENDIAN
+#endif
+
 #ifdef TARGET_FLT_EVAL_METHOD
 #define TARGET_FLT_EVAL_METHOD_NON_DEFAULT 1
 #else
@@ -975,16 +1036,9 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 
 #endif /* old constraint mechanism in use */
 
-/* Determine whether the entire c99 runtime
-   is present in the runtime library.  */
-#ifndef TARGET_C99_FUNCTIONS
-#define TARGET_C99_FUNCTIONS 0
-#endif
-
-/* Determine whether the target runtime library has
-   a sincos implementation following the GNU extension.  */
-#ifndef TARGET_HAS_SINCOS
-#define TARGET_HAS_SINCOS 0
+/* Determin whether the target runtime library is Bionic */
+#ifndef TARGET_HAS_BIONIC
+#define TARGET_HAS_BIONIC 0
 #endif
 
 /* Indicate that CLZ and CTZ are undefined at zero.  */
@@ -1146,11 +1200,8 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #define ATTRIBUTE_ALIGNED_VALUE BIGGEST_ALIGNMENT
 #endif
 
-/* Many ports have no mode-dependent addresses (except possibly autoincrement
-   and autodecrement addresses, which are handled by target-independent code
-   in recog.c).  */
-#ifndef GO_IF_MODE_DEPENDENT_ADDRESS
-#define GO_IF_MODE_DEPENDENT_ADDRESS(X, WIN)
+#ifndef SLOW_UNALIGNED_ACCESS
+#define SLOW_UNALIGNED_ACCESS(MODE, ALIGN) STRICT_ALIGNMENT
 #endif
 
 /* For most ports anything that evaluates to a constant symbolic
@@ -1223,7 +1274,7 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
    SET_RATIO or more simple move-instruction sequences, we will do a movmem
    or libcall instead.  */
 #ifndef SET_RATIO
-#define SET_RATIO(speed) MOVE_RATIO(speed)
+#define SET_RATIO(speed) MOVE_RATIO (speed)
 #endif
 
 /* Supply a default definition for FUNCTION_ARG_PADDING:
@@ -1288,9 +1339,9 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #ifdef STACK_CHECK_PROTECT
 #define STACK_OLD_CHECK_PROTECT STACK_CHECK_PROTECT
 #else
-#define STACK_OLD_CHECK_PROTECT					\
- (targetm.except_unwind_info (&global_options) == UI_SJLJ	\
-  ? 75 * UNITS_PER_WORD						\
+#define STACK_OLD_CHECK_PROTECT						\
+ (targetm_common.except_unwind_info (&global_options) == UI_SJLJ	\
+  ? 75 * UNITS_PER_WORD							\
   : 8 * 1024)
 #endif
 
@@ -1298,9 +1349,9 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
    overflow detection.  The default value conveys an estimate of the amount
    of stack required to propagate an exception.  */
 #ifndef STACK_CHECK_PROTECT
-#define STACK_CHECK_PROTECT					\
- (targetm.except_unwind_info (&global_options) == UI_SJLJ	\
-  ? 75 * UNITS_PER_WORD						\
+#define STACK_CHECK_PROTECT						\
+ (targetm_common.except_unwind_info (&global_options) == UI_SJLJ	\
+  ? 75 * UNITS_PER_WORD							\
   : 12 * 1024)
 #endif
 

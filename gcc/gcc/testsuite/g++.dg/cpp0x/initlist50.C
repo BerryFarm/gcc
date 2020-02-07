@@ -1,5 +1,5 @@
 // PR c++/45418
-// { dg-options -std=c++0x }
+// { dg-do compile { target c++11 } }
 
 struct A1 { };
 struct A2 {
@@ -8,7 +8,7 @@ struct A2 {
 
 template <class T> struct B {
   T ar[1];
-  B(T t):ar({t}) {}
+  B(T t):ar{t} {}
 };
 
 int main(){

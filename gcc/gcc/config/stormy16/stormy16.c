@@ -1,6 +1,5 @@
 /* Xstormy16 target functions.
-   Copyright (C) 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
-   2006, 2007, 2008, 2009, 2010, 2011  Free Software Foundation, Inc.
+   Copyright (C) 1997-2014 Free Software Foundation, Inc.
    Contributed by Red Hat, Inc.
 
    This file is part of GCC.
@@ -36,6 +35,10 @@
 #include "diagnostic-core.h"
 #include "obstack.h"
 #include "tree.h"
+#include "stringpool.h"
+#include "stor-layout.h"
+#include "varasm.h"
+#include "calls.h"
 #include "expr.h"
 #include "optabs.h"
 #include "except.h"
@@ -44,10 +47,21 @@
 #include "target-def.h"
 #include "tm_p.h"
 #include "langhooks.h"
+#include "pointer-set.h"
+#include "hash-table.h"
+#include "vec.h"
+#include "ggc.h"
+#include "basic-block.h"
+#include "tree-ssa-alias.h"
+#include "internal-fn.h"
+#include "gimple-fold.h"
+#include "tree-eh.h"
+#include "gimple-expr.h"
+#include "is-a.h"
 #include "gimple.h"
+#include "gimplify.h"
 #include "df.h"
 #include "reload.h"
-#include "ggc.h"
 
 static rtx emit_addhi3_postreload (rtx, rtx, rtx);
 static void xstormy16_asm_out_constructor (rtx, int);
@@ -57,8 +71,8 @@ static void xstormy16_asm_output_mi_thunk (FILE *, tree, HOST_WIDE_INT,
 
 static void xstormy16_init_builtins (void);
 static rtx xstormy16_expand_builtin (tree, rtx, rtx, enum machine_mode, int);
-static bool xstormy16_rtx_costs (rtx, int, int, int *, bool);
-static int xstormy16_address_cost (rtx, bool);
+static bool xstormy16_rtx_costs (rtx, int, int, int, int *, bool);
+static int xstormy16_address_cost (rtx, enum machine_mode, addr_space_t, bool);
 static bool xstormy16_return_in_memory (const_tree, const_tree);
 
 static GTY(()) section *bss100_section;
@@ -69,7 +83,8 @@ static GTY(()) section *bss100_section;
 
 static bool
 xstormy16_rtx_costs (rtx x, int code, int outer_code ATTRIBUTE_UNUSED,
-		     int *total, bool speed ATTRIBUTE_UNUSED)
+		     int opno ATTRIBUTE_UNUSED, int *total,
+		     bool speed ATTRIBUTE_UNUSED)
 {
   switch (code)
     {
@@ -102,7 +117,9 @@ xstormy16_rtx_costs (rtx x, int code, int outer_code ATTRIBUTE_UNUSED,
 }
 
 static int
-xstormy16_address_cost (rtx x, bool speed ATTRIBUTE_UNUSED)
+xstormy16_address_cost (rtx x, enum machine_mode mode ATTRIBUTE_UNUSED,
+			addr_space_t as ATTRIBUTE_UNUSED,
+			bool speed ATTRIBUTE_UNUSED)
 {
   return (CONST_INT_P (x) ? 2
 	  : GET_CODE (x) == PLUS ? 7
@@ -668,7 +685,8 @@ xstormy16_legitimate_address_p (enum machine_mode mode ATTRIBUTE_UNUSED,
    or pre-decrement address.  */
 
 static bool
-xstormy16_mode_dependent_address_p (const_rtx x)
+xstormy16_mode_dependent_address_p (const_rtx x,
+				    addr_space_t as ATTRIBUTE_UNUSED)
 {
   if (LEGITIMATE_ADDRESS_CONST_INT_P (x, 0)
       && ! LEGITIMATE_ADDRESS_CONST_INT_P (x, 6))
@@ -916,7 +934,7 @@ struct xstormy16_stack_layout
   ((df_regs_ever_live_p (REGNUM) && ! call_used_regs[REGNUM])		\
    || (IFUN && ! fixed_regs[REGNUM] && call_used_regs[REGNUM]		\
        && (REGNUM != CARRY_REGNUM)					\
-       && (df_regs_ever_live_p (REGNUM) || ! current_function_is_leaf)))
+       && (df_regs_ever_live_p (REGNUM) || ! crtl->is_leaf)))
 
 /* Compute the stack layout.  */
 
@@ -1034,6 +1052,9 @@ xstormy16_expand_prologue (void)
   if (layout.locals_size >= 32768)
     error ("local variable memory requirements exceed capacity");
 
+  if (flag_stack_usage_info)
+    current_function_static_stack_size = layout.frame_size;
+
   /* Save the argument registers if necessary.  */
   if (layout.stdarg_save_size)
     for (regno = FIRST_ARGUMENT_REGISTER;
@@ -1052,7 +1073,8 @@ xstormy16_expand_prologue (void)
 					     gen_rtx_MEM (Pmode, stack_pointer_rtx),
 					     reg);
 	XVECEXP (dwarf, 0, 1) = gen_rtx_SET (Pmode, stack_pointer_rtx,
-					     plus_constant (stack_pointer_rtx,
+					     plus_constant (Pmode,
+							    stack_pointer_rtx,
 							    GET_MODE_SIZE (Pmode)));
 	add_reg_note (insn, REG_FRAME_RELATED_EXPR, dwarf);
 	RTX_FRAME_RELATED_P (XVECEXP (dwarf, 0, 0)) = 1;
@@ -1075,7 +1097,8 @@ xstormy16_expand_prologue (void)
 					     gen_rtx_MEM (Pmode, stack_pointer_rtx),
 					     reg);
 	XVECEXP (dwarf, 0, 1) = gen_rtx_SET (Pmode, stack_pointer_rtx,
-					     plus_constant (stack_pointer_rtx,
+					     plus_constant (Pmode,
+							    stack_pointer_rtx,
 							    GET_MODE_SIZE (Pmode)));
 	add_reg_note (insn, REG_FRAME_RELATED_EXPR, dwarf);
 	RTX_FRAME_RELATED_P (XVECEXP (dwarf, 0, 0)) = 1;
@@ -1201,9 +1224,11 @@ xstormy16_function_profiler (void)
    the word count.  */
 
 static void
-xstormy16_function_arg_advance (CUMULATIVE_ARGS *cum, enum machine_mode mode,
+xstormy16_function_arg_advance (cumulative_args_t cum_v, enum machine_mode mode,
 				const_tree type, bool named ATTRIBUTE_UNUSED)
 {
+  CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
+
   /* If an argument would otherwise be passed partially in registers,
      and partially on the stack, the whole of it is passed on the
      stack.  */
@@ -1215,9 +1240,11 @@ xstormy16_function_arg_advance (CUMULATIVE_ARGS *cum, enum machine_mode mode,
 }
 
 static rtx
-xstormy16_function_arg (CUMULATIVE_ARGS *cum, enum machine_mode mode,
+xstormy16_function_arg (cumulative_args_t cum_v, enum machine_mode mode,
 			const_tree type, bool named ATTRIBUTE_UNUSED)
 {
+  CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
+
   if (mode == VOIDmode)
     return const0_rtx;
   if (targetm.calls.must_pass_in_stack (mode, type)
@@ -1288,7 +1315,7 @@ xstormy16_expand_builtin_va_start (tree valist, rtx nextarg ATTRIBUTE_UNUSED)
   t = make_tree (TREE_TYPE (base), virtual_incoming_args_rtx);
   u = build_int_cst (NULL_TREE, - INCOMING_FRAME_SP_OFFSET);
   u = fold_convert (TREE_TYPE (count), u);
-  t = build2 (POINTER_PLUS_EXPR, TREE_TYPE (base), t, u);
+  t = fold_build_pointer_plus (t, u);
   t = build2 (MODIFY_EXPR, TREE_TYPE (base), base, t);
   TREE_SIDE_EFFECTS (t) = 1;
   expand_expr (t, const0_rtx, VOIDmode, EXPAND_NORMAL);
@@ -1346,7 +1373,7 @@ xstormy16_gimplify_va_arg_expr (tree valist, tree type, gimple_seq *pre_p,
 		  NULL_TREE);
       gimplify_and_add (t, pre_p);
 
-      t = build2 (POINTER_PLUS_EXPR, ptr_type_node, base, count_tmp);
+      t = fold_build_pointer_plus (base, count_tmp);
       gimplify_assign (addr, t, pre_p);
 
       t = build1 (GOTO_EXPR, void_type_node, lab_gotaddr);
@@ -1381,7 +1408,7 @@ xstormy16_gimplify_va_arg_expr (tree valist, tree type, gimple_seq *pre_p,
 	      fold_convert (TREE_TYPE (count), size_tree));
   t = fold_convert (TREE_TYPE (t), fold (t));
   t = fold_build1 (NEGATE_EXPR, TREE_TYPE (t), t);
-  t = build2 (POINTER_PLUS_EXPR, TREE_TYPE (base), base, t);
+  t = fold_build_pointer_plus (base, t);
   gimplify_assign (addr, t, pre_p);
 
   t = build1 (LABEL_EXPR, void_type_node, lab_gotaddr);
@@ -2170,11 +2197,15 @@ static tree xstormy16_handle_below100_attribute
 
 static const struct attribute_spec xstormy16_attribute_table[] =
 {
-  /* name, min_len, max_len, decl_req, type_req, fn_type_req, handler.  */
-  { "interrupt", 0, 0, false, true,  true,  xstormy16_handle_interrupt_attribute },
-  { "BELOW100",  0, 0, false, false, false, xstormy16_handle_below100_attribute },
-  { "below100",  0, 0, false, false, false, xstormy16_handle_below100_attribute },
-  { NULL,        0, 0, false, false, false, NULL }
+  /* name, min_len, max_len, decl_req, type_req, fn_type_req, handler,
+     affects_type_identity.  */
+  { "interrupt", 0, 0, false, true,  true,
+    xstormy16_handle_interrupt_attribute , false },
+  { "BELOW100",  0, 0, false, false, false,
+    xstormy16_handle_below100_attribute, false },
+  { "below100",  0, 0, false, false, false,
+    xstormy16_handle_below100_attribute, false },
+  { NULL,        0, 0, false, false, false, NULL, false }
 };
 
 /* Handle an "interrupt" attribute;
@@ -2251,15 +2282,21 @@ static struct
 static void
 xstormy16_init_builtins (void)
 {
-  tree args, ret_type, arg;
-  int i, a;
+  tree args[2], ret_type, arg = NULL_TREE, ftype;
+  int i, a, n_args;
 
   ret_type = void_type_node;
 
   for (i = 0; s16builtins[i].name; i++)
     {
-      args = void_list_node;
-      for (a = strlen (s16builtins[i].arg_types) - 1; a >= 0; a--)
+      n_args = strlen (s16builtins[i].arg_types) - 1;
+
+      gcc_assert (n_args <= (int) ARRAY_SIZE (args));
+
+      for (a = n_args - 1; a >= 0; a--)
+	args[a] = NULL_TREE;
+
+      for (a = n_args; a >= 0; a--)
 	{
 	  switch (s16builtins[i].arg_types[a])
 	    {
@@ -2272,11 +2309,11 @@ xstormy16_init_builtins (void)
 	  if (a == 0)
 	    ret_type = arg;
 	  else
-	    args = tree_cons (NULL_TREE, arg, args);
+	    args[a-1] = arg;
 	}
-      add_builtin_function (s16builtins[i].name,
-			    build_function_type (ret_type, args),
-			    i, BUILT_IN_MD, NULL, NULL);
+      ftype = build_function_type_list (ret_type, args[0], args[1], NULL_TREE);
+      add_builtin_function (s16builtins[i].name, ftype,
+			    i, BUILT_IN_MD, NULL, NULL_TREE);
     }
 }
 
@@ -2397,7 +2434,8 @@ combine_bnp (rtx insn)
     {
       /* LT and GE conditionals should have a sign extend before
 	 them.  */
-      for (and_insn = prev_real_insn (insn); and_insn;
+      for (and_insn = prev_real_insn (insn);
+	   and_insn != NULL_RTX;
 	   and_insn = prev_real_insn (and_insn))
 	{
 	  int and_code = recog_memoized (and_insn);
@@ -2418,15 +2456,15 @@ combine_bnp (rtx insn)
 	  if (reg_mentioned_p (reg, and_insn))
 	    return;
 
-	  if (GET_CODE (and_insn) != NOTE
-	      && GET_CODE (and_insn) != INSN)
+	  if (! NOTE_P (and_insn) && ! NONJUMP_INSN_P (and_insn))
 	    return;
 	}
     }
   else
     {
       /* EQ and NE conditionals have an AND before them.  */
-      for (and_insn = prev_real_insn (insn); and_insn;
+      for (and_insn = prev_real_insn (insn);
+	   and_insn != NULL_RTX;
 	   and_insn = prev_real_insn (and_insn))
 	{
 	  if (recog_memoized (and_insn) == CODE_FOR_andhi3
@@ -2437,8 +2475,7 @@ combine_bnp (rtx insn)
 	  if (reg_mentioned_p (reg, and_insn))
 	    return;
 
-	  if (GET_CODE (and_insn) != NOTE
-	      && GET_CODE (and_insn) != INSN)
+	  if (! NOTE_P (and_insn) && ! NONJUMP_INSN_P (and_insn))
 	    return;
 	}
 
@@ -2462,8 +2499,7 @@ combine_bnp (rtx insn)
 		break;
 
 	      if (reg_mentioned_p (reg, shift)
-		  || (GET_CODE (shift) != NOTE
-		      && GET_CODE (shift) != INSN))
+		  || (! NOTE_P (shift) && ! NONJUMP_INSN_P (shift)))
 		{
 		  shift = NULL_RTX;
 		  break;
@@ -2471,7 +2507,8 @@ combine_bnp (rtx insn)
 	    }
 	}
     }
-  if (!and_insn)
+
+  if (and_insn == NULL_RTX)
     return;
 
   for (load = shift ? prev_real_insn (shift) : prev_real_insn (and_insn);
@@ -2509,8 +2546,7 @@ combine_bnp (rtx insn)
       if (reg_mentioned_p (reg, load))
 	return;
 
-      if (GET_CODE (load) != NOTE
-	  && GET_CODE (load) != INSN)
+      if (! NOTE_P (load) && ! NONJUMP_INSN_P (load))
 	return;
     }
   if (!load)
@@ -2546,7 +2582,7 @@ combine_bnp (rtx insn)
 
       if (! (mask & 0xff))
 	{
-	  addr = plus_constant (addr, 1);
+	  addr = plus_constant (Pmode, addr, 1);
 	  mask >>= 8;
 	}
       mem = gen_rtx_MEM (QImode, addr);
@@ -2588,13 +2624,6 @@ xstormy16_return_in_memory (const_tree type, const_tree fntype ATTRIBUTE_UNUSED)
   const HOST_WIDE_INT size = int_size_in_bytes (type);
   return (size == -1 || size > UNITS_PER_WORD * NUM_ARGUMENT_REGISTERS);
 }
-
-/* Implement TARGET_OPTION_OPTIMIZATION_TABLE.  */
-static const struct default_options xstorym16_option_optimization_table[] =
-  {
-    { OPT_LEVELS_1_PLUS, OPT_fomit_frame_pointer, NULL, 1 },
-    { OPT_LEVELS_NONE, 0, NULL, 0 }
-  };
 
 #undef  TARGET_ASM_ALIGNED_HI_OP
 #define TARGET_ASM_ALIGNED_HI_OP "\t.hword\t"
@@ -2668,9 +2697,6 @@ static const struct default_options xstorym16_option_optimization_table[] =
 
 #undef TARGET_TRAMPOLINE_INIT
 #define TARGET_TRAMPOLINE_INIT xstormy16_trampoline_init
-
-#undef TARGET_OPTION_OPTIMIZATION_TABLE
-#define TARGET_OPTION_OPTIMIZATION_TABLE xstorym16_option_optimization_table
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 

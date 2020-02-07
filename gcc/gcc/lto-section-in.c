@@ -1,6 +1,6 @@
 /* Input functions for reading LTO sections.
 
-   Copyright 2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 2009-2014 Free Software Foundation, Inc.
    Contributed by Kenneth Zadeck <zadeck@naturalbridge.com>
 
 This file is part of GCC.
@@ -24,24 +24,23 @@ along with GCC; see the file COPYING3.  If not see
 #include "coretypes.h"
 #include "tm.h"
 #include "tree.h"
+#include "basic-block.h"
+#include "tree-ssa-alias.h"
+#include "internal-fn.h"
+#include "gimple-expr.h"
+#include "is-a.h"
+#include "gimple.h"
 #include "expr.h"
 #include "flags.h"
 #include "params.h"
 #include "input.h"
 #include "hashtab.h"
-#include "basic-block.h"
-#include "tree-flow.h"
-#include "cgraph.h"
 #include "function.h"
-#include "ggc.h"
 #include "diagnostic-core.h"
 #include "except.h"
-#include "vec.h"
 #include "timevar.h"
-#include "output.h"
 #include "lto-streamer.h"
 #include "lto-compress.h"
-#include "ggc.h"
 
 /* Section names.  These must correspond to the values of
    enum lto_section_type.  */
@@ -50,90 +49,19 @@ const char *lto_section_name[LTO_N_SECTION_TYPES] =
   "decls",
   "function_body",
   "statics",
-  "cgraph",
-  "vars",
+  "symtab",
   "refs",
+  "asm",
   "jmpfuncs",
   "pureconst",
   "reference",
-  "symtab",
+  "profile",
+  "symbol_nodes",
   "opts",
-  "cgraphopt"
+  "cgraphopt",
+  "inline",
+  "ipcp_trans"
 };
-
-unsigned char
-lto_input_1_unsigned (struct lto_input_block *ib)
-{
-  if (ib->p >= ib->len)
-    internal_error ("bytecode stream: trying to read %d bytes "
-		    "after the end of the input buffer", ib->p - ib->len);
-
-  return (ib->data[ib->p++]);
-}
-
-
-/* Read an ULEB128 Number of IB.  */
-
-unsigned HOST_WIDE_INT
-lto_input_uleb128 (struct lto_input_block *ib)
-{
-  unsigned HOST_WIDE_INT result = 0;
-  int shift = 0;
-  unsigned HOST_WIDE_INT byte;
-
-  while (true)
-    {
-      byte = lto_input_1_unsigned (ib);
-      result |= (byte & 0x7f) << shift;
-      shift += 7;
-      if ((byte & 0x80) == 0)
-	return result;
-    }
-}
-
-/* HOST_WIDEST_INT version of lto_input_uleb128.  IB is as in
-   lto_input_uleb128.  */
-
-unsigned HOST_WIDEST_INT
-lto_input_widest_uint_uleb128 (struct lto_input_block *ib)
-{
-  unsigned HOST_WIDEST_INT result = 0;
-  int shift = 0;
-  unsigned HOST_WIDEST_INT byte;
-
-  while (true)
-    {
-      byte = lto_input_1_unsigned (ib);
-      result |= (byte & 0x7f) << shift;
-      shift += 7;
-      if ((byte & 0x80) == 0)
-	return result;
-    }
-}
-
-/* Read an SLEB128 Number of IB.  */
-
-HOST_WIDE_INT
-lto_input_sleb128 (struct lto_input_block *ib)
-{
-  HOST_WIDE_INT result = 0;
-  int shift = 0;
-  unsigned HOST_WIDE_INT byte;
-
-  while (true)
-    {
-      byte = lto_input_1_unsigned (ib);
-      result |= (byte & 0x7f) << shift;
-      shift += 7;
-      if ((byte & 0x80) == 0)
-	{
-	  if ((shift < HOST_BITS_PER_WIDE_INT) && (byte & 0x40))
-	    result |= - ((HOST_WIDE_INT)1 << shift);
-
-	  return result;
-	}
-    }
-}
 
 
 /* Hooks so that the ipa passes can call into the lto front end to get
@@ -225,26 +153,30 @@ lto_get_section_data (struct lto_file_decl_data *file_data,
 
   /* FIXME lto: WPA mode does not write compressed sections, so for now
      suppress uncompression if flag_ltrans.  */
-  if (flag_ltrans)
-    return data;
+  if (!flag_ltrans)
+    {
+      /* Create a mapping header containing the underlying data and length,
+	 and prepend this to the uncompression buffer.  The uncompressed data
+	 then follows, and a pointer to the start of the uncompressed data is
+	 returned.  */
+      header = (struct lto_data_header *) xmalloc (header_length);
+      header->data = data;
+      header->len = *len;
 
-  /* Create a mapping header containing the underlying data and length,
-     and prepend this to the uncompression buffer.  The uncompressed data
-     then follows, and a pointer to the start of the uncompressed data is
-     returned.  */
-  header = (struct lto_data_header *) xmalloc (header_length);
-  header->data = data;
-  header->len = *len;
+      buffer.data = (char *) header;
+      buffer.length = header_length;
 
-  buffer.data = (char *) header;
-  buffer.length = header_length;
+      stream = lto_start_uncompression (lto_append_data, &buffer);
+      lto_uncompress_block (stream, data, *len);
+      lto_end_uncompression (stream);
 
-  stream = lto_start_uncompression (lto_append_data, &buffer);
-  lto_uncompress_block (stream, data, *len);
-  lto_end_uncompression (stream);
+      *len = buffer.length - header_length;
+      data = buffer.data + header_length;
+    }
 
-  *len = buffer.length - header_length;
-  return buffer.data + header_length;
+  lto_check_version (((const lto_header *)data)->major_version,
+		     ((const lto_header *)data)->minor_version);
+  return data;
 }
 
 
@@ -484,4 +416,59 @@ lto_get_function_in_decl_state (struct lto_file_decl_data *file_data,
   temp.fn_decl = func;
   slot = htab_find_slot (file_data->function_decl_states, &temp, NO_INSERT);
   return slot? ((struct lto_in_decl_state*) *slot) : NULL;
+}
+
+/* Free decl_states.  */
+
+void
+lto_free_function_in_decl_state (struct lto_in_decl_state *state)
+{
+  int i;
+  for (i = 0; i < LTO_N_DECL_STREAMS; i++)
+    ggc_free (state->streams[i].trees);
+  ggc_free (state);
+}
+
+/* Free decl_states associated with NODE.  This makes it possible to furhter
+   release trees needed by the NODE's body.  */
+
+void
+lto_free_function_in_decl_state_for_node (symtab_node *node)
+{
+  struct lto_in_decl_state temp;
+  void **slot;
+
+  if (!node->lto_file_data)
+    return;
+
+  temp.fn_decl = node->decl;
+  slot = htab_find_slot (node->lto_file_data->function_decl_states,
+			 &temp, NO_INSERT);
+  if (slot && *slot)
+    {
+      lto_free_function_in_decl_state ((struct lto_in_decl_state*) *slot);
+      htab_clear_slot (node->lto_file_data->function_decl_states,
+		       slot);
+    }
+  node->lto_file_data = NULL;
+}
+
+
+/* Report read pass end of the section.  */
+
+void
+lto_section_overrun (struct lto_input_block *ib)
+{
+  fatal_error ("bytecode stream: trying to read %d bytes "
+	       "after the end of the input buffer", ib->p - ib->len);
+}
+
+/* Report out of range value.  */
+
+void
+lto_value_range_error (const char *purpose, HOST_WIDE_INT val,
+		       HOST_WIDE_INT min, HOST_WIDE_INT max)
+{
+  fatal_error ("%s out of range: Range is %i to %i, value is %i",
+	       purpose, (int)min, (int)max, (int)val);
 }

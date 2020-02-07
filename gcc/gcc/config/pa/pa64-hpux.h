@@ -1,7 +1,6 @@
 /* Definitions of target machine for GNU compiler, for HPs running
    HPUX using the 64bit runtime model.
-   Copyright (C) 1999, 2000, 2001, 2002, 2004, 2005, 2007, 2008, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 1999-2014 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -59,19 +58,22 @@ along with GCC; see the file COPYING3.  If not see
 #if ((TARGET_DEFAULT | TARGET_CPU_DEFAULT) & MASK_GNU_LD)
 #define LIB_SPEC \
   "%{!shared:\
-     %{!p:%{!pg:%{fopenmp:%{static:-a shared} -lrt %{static:-a archive}}\
+     %{!p:%{!pg:%{fopenmp|ftree-parallelize-loops=*:%{static:-a shared} -lrt\
+                  %{static:-a archive}}\
 	    %{mt|pthread:-lpthread} -lc\
 	    %{static:%{!nolibdld:-a shared -ldld -a archive -lc}\
 		%{!mt:%{!pthread:-a shared -lc -a archive}}}}}\
      %{p:%{!pg:%{static:%{!mhp-ld:-a shared}%{mhp-ld:-a archive_shared}}\
 	   -lprof %{static:-a archive}\
-	   %{fopenmp:%{static:-a shared} -lrt %{static:-a archive}}\
+	   %{fopenmp|ftree-parallelize-loops=*:%{static:-a shared} -lrt\
+             %{static:-a archive}}\
 	   %{mt|pthread:-lpthread} -lc\
 	   %{static:%{!nolibdld:-a shared -ldld -a archive -lc}\
 		%{!mt:%{!pthread:-a shared -lc -a archive}}}}}\
      %{pg:%{static:%{!mhp-ld:-a shared}%{mhp-ld:-a archive_shared}}\
        -lgprof %{static:-a archive}\
-       %{fopenmp:%{static:-a shared} -lrt %{static:-a archive}}\
+       %{fopenmp|ftree-parallelize-loops=*:%{static:-a shared} -lrt\
+         %{static:-a archive}}\
        %{mt|pthread:-lpthread} -lc\
        %{static:%{!nolibdld:-a shared -ldld -a archive -lc}\
 		%{!mt:%{!pthread:-a shared -lc -a archive}}}}}\
@@ -79,19 +81,22 @@ along with GCC; see the file COPYING3.  If not see
 #else
 #define LIB_SPEC \
   "%{!shared:\
-     %{!p:%{!pg:%{fopenmp:%{static:-a shared} -lrt %{static:-a archive}}\
+     %{!p:%{!pg:%{fopenmp|ftree-parallelize-loops=*:%{static:-a shared} -lrt\
+                  %{static:-a archive}}\
 	    %{mt|pthread:-lpthread} -lc\
 	    %{static:%{!nolibdld:-a shared -ldld -a archive -lc}\
 		%{!mt:%{!pthread:-a shared -lc -a archive}}}}}\
      %{p:%{!pg:%{static:%{mgnu-ld:-a shared}%{!mgnu-ld:-a archive_shared}}\
 	   -lprof %{static:-a archive}\
-	   %{fopenmp:%{static:-a shared} -lrt %{static:-a archive}}\
+	   %{fopenmp|ftree-parallelize-loops=*:%{static:-a shared} -lrt\
+             %{static:-a archive}}\
 	   %{mt|pthread:-lpthread} -lc\
 	   %{static:%{!nolibdld:-a shared -ldld -a archive -lc}\
 		%{!mt:%{!pthread:-a shared -lc -a archive}}}}}\
      %{pg:%{static:%{mgnu-ld:-a shared}%{!mgnu-ld:-a archive_shared}}\
        -lgprof %{static:-a archive}\
-       %{fopenmp:%{static:-a shared} -lrt %{static:-a archive}}\
+       %{fopenmp|ftree-parallelize-loops=*:%{static:-a shared} -lrt\
+         %{static:-a archive}}\
        %{mt|pthread:-lpthread} -lc\
        %{static:%{!nolibdld:-a shared -ldld -a archive -lc}\
 		%{!mt:%{!pthread:-a shared -lc -a archive}}}}}\
@@ -236,7 +241,7 @@ do {								\
 #define ASM_OUTPUT_EXTERNAL_LIBCALL(FILE, FUN)			\
 do {								\
   if (!FUNCTION_NAME_P (XSTR (FUN, 0)))				\
-    hppa_encode_label (FUN);					\
+    pa_encode_label (FUN);					\
   ASM_OUTPUT_TYPE_DIRECTIVE (FILE, XSTR (FUN, 0), "function");	\
 } while (0)
 
@@ -304,7 +309,14 @@ do {								\
 /* The following STARTFILE_SPEC and ENDFILE_SPEC defines provide the
    magic needed to run initializers and finalizers.  */
 #undef STARTFILE_SPEC
-#if TARGET_HPUX_11_11
+#if TARGET_HPUX_11_31
+#define STARTFILE_SPEC \
+  "%{!shared: %{!symbolic: crt0%O%s} \
+     %{munix=95:unix95.o%s} %{munix=98:unix98.o%s} \
+     %{!munix=93:%{!munix=95:%{!munix=98:unix2003%O%s}}}} \
+     %{static:crtbeginT%O%s} \
+   %{!static:%{!shared:crtbegin%O%s} %{shared:crtbeginS%O%s}}"
+#elif TARGET_HPUX_11_11
 #define STARTFILE_SPEC \
   "%{!shared: %{!symbolic: crt0%O%s} %{munix=95:unix95.o%s} \
      %{!munix=93:%{!munix=95:unix98%O%s}}} %{static:crtbeginT%O%s} \

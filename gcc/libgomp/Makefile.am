@@ -22,26 +22,26 @@ toolexeclib_LTLIBRARIES = libgomp.la
 nodist_toolexeclib_HEADERS = libgomp.spec
 
 if LIBGOMP_BUILD_VERSIONED_SHLIB
+# -Wc is only a libtool option.
+comma = ,
+PREPROCESS = $(subst -Wc$(comma), , $(COMPILE)) -E
+
+libgomp.ver: $(top_srcdir)/libgomp.map
+	$(EGREP) -v '#(#| |$$)' $< | \
+	  $(PREPROCESS) -P -include config.h - > $@ || (rm -f $@ ; exit 1)
+
 if LIBGOMP_BUILD_VERSIONED_SHLIB_GNU
-if LIBGOMP_BUILD_VERSIONED_SHLIB_SOL2
-libgomp_version_script = -Wl,--version-script,libgomp.map-sol2
-libgomp_version_dep = libgomp.map-sol2
-libgomp.map-sol2 : $(top_srcdir)/libgomp.map
-	sed -e '/^#ifdef HAVE_SYMVER_SYMBOL_RENAMING_RUNTIME_SUPPORT/,/^#endif/d' $< \
-	 > $@ || (rm -f $@ ; exit 1)
-else
-libgomp_version_script = -Wl,--version-script,$(top_srcdir)/libgomp.map
-libgomp_version_dep = $(top_srcdir)/libgomp.map
-endif
+libgomp_version_script = -Wl,--version-script,libgomp.ver
+libgomp_version_dep = libgomp.ver
 endif
 if LIBGOMP_BUILD_VERSIONED_SHLIB_SUN
-libgomp_version_script = -Wl,-M,libgomp.map-sun
-libgomp_version_dep = libgomp.map-sun
-libgomp.map-sun : $(top_srcdir)/libgomp.map \
+libgomp_version_script = -Wl,-M,libgomp.ver-sun
+libgomp_version_dep = libgomp.ver-sun
+libgomp.ver-sun : libgomp.ver \
 		$(top_srcdir)/../contrib/make_sunver.pl \
 		$(libgomp_la_OBJECTS) $(libgomp_la_LIBADD)
 	perl $(top_srcdir)/../contrib/make_sunver.pl \
-	  $(top_srcdir)/libgomp.map \
+	  libgomp.ver \
 	  $(libgomp_la_OBJECTS:%.lo=.libs/%.o) \
 	 `echo $(libgomp_la_LIBADD) | \
 	    sed 's,/\([^/.]*\)\.la,/.libs/\1.a,g'` \
@@ -60,7 +60,7 @@ libgomp_la_LINK = $(LINK) $(libgomp_la_LDFLAGS)
 libgomp_la_SOURCES = alloc.c barrier.c critical.c env.c error.c iter.c \
 	iter_ull.c loop.c loop_ull.c ordered.c parallel.c sections.c single.c \
 	task.c team.c work.c lock.c mutex.c proc.c sem.c bar.c ptrlock.c \
-	time.c fortran.c affinity.c
+	time.c fortran.c affinity.c target.c
 
 nodist_noinst_HEADERS = libgomp_f.h
 nodist_libsubinclude_HEADERS = omp.h
@@ -76,7 +76,7 @@ LINK = $(LIBTOOL) --tag CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link \
 omp_lib_kinds.mod: omp_lib.mod
 	:
 omp_lib.mod: omp_lib.f90
-	$(FC) $(FCFLAGS) -fsyntax-only omp_lib.f90
+	$(FC) $(FCFLAGS) -fsyntax-only $<
 fortran.lo: libgomp_f.h
 fortran.o: libgomp_f.h
 env.lo: libgomp_f.h

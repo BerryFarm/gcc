@@ -1,7 +1,6 @@
 /* Definitions of target machine for GNU compiler,
    for 64 bit PowerPC linux.
-   Copyright (C) 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-   2009, 2010, 2011  Free Software Foundation, Inc.
+   Copyright (C) 2000-2014 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -25,9 +24,6 @@
    <http://www.gnu.org/licenses/>.  */
 
 #ifndef RS6000_BI_ARCH
-
-#undef	DEFAULT_ABI
-#define	DEFAULT_ABI ABI_AIX
 
 #undef	TARGET_64BIT
 #define	TARGET_64BIT 1
@@ -75,13 +71,17 @@ extern int dot_symbols;
 #undef  PROCESSOR_DEFAULT
 #define PROCESSOR_DEFAULT PROCESSOR_POWER7
 #undef  PROCESSOR_DEFAULT64
+#ifdef LINUX64_DEFAULT_ABI_ELFv2
+#define PROCESSOR_DEFAULT64 PROCESSOR_POWER8
+#else
 #define PROCESSOR_DEFAULT64 PROCESSOR_POWER7
+#endif
 
 /* We don't need to generate entries in .fixup, except when
    -mrelocatable or -mrelocatable-lib is given.  */
 #undef RELOCATABLE_NEEDS_FIXUP
 #define RELOCATABLE_NEEDS_FIXUP \
-  (target_flags & target_flags_explicit & MASK_RELOCATABLE)
+  (rs6000_isa_flags & rs6000_isa_flags_explicit & OPTION_MASK_RELOCATABLE)
 
 #undef	RS6000_ABI_NAME
 #define	RS6000_ABI_NAME "linux"
@@ -89,11 +89,17 @@ extern int dot_symbols;
 #define INVALID_64BIT "-m%s not supported in this configuration"
 #define INVALID_32BIT INVALID_64BIT
 
+#ifdef LINUX64_DEFAULT_ABI_ELFv2
+#define ELFv2_ABI_CHECK (rs6000_elf_abi != 1)
+#else
+#define ELFv2_ABI_CHECK (rs6000_elf_abi == 2)
+#endif
+
 #undef	SUBSUBTARGET_OVERRIDE_OPTIONS
 #define	SUBSUBTARGET_OVERRIDE_OPTIONS				\
   do								\
     {								\
-      if (!rs6000_explicit_options.alignment)			\
+      if (!global_options_set.x_rs6000_alignment_flags)		\
 	rs6000_alignment_flags = MASK_ALIGN_NATURAL;		\
       if (TARGET_64BIT)						\
 	{							\
@@ -103,14 +109,20 @@ extern int dot_symbols;
 	      error (INVALID_64BIT, "call");			\
 	    }							\
 	  dot_symbols = !strcmp (rs6000_abi_name, "aixdesc");	\
-	  if (target_flags & MASK_RELOCATABLE)			\
+	  if (ELFv2_ABI_CHECK)					\
 	    {							\
-	      target_flags &= ~MASK_RELOCATABLE;		\
+	      rs6000_current_abi = ABI_ELFv2;			\
+	      if (dot_symbols)					\
+		error ("-mcall-aixdesc incompatible with -mabi=elfv2"); \
+	    }							\
+	  if (rs6000_isa_flags & OPTION_MASK_RELOCATABLE)	\
+	    {							\
+	      rs6000_isa_flags &= ~OPTION_MASK_RELOCATABLE;	\
 	      error (INVALID_64BIT, "relocatable");		\
 	    }							\
-	  if (target_flags & MASK_EABI)				\
+	  if (rs6000_isa_flags & OPTION_MASK_EABI)		\
 	    {							\
-	      target_flags &= ~MASK_EABI;			\
+	      rs6000_isa_flags &= ~OPTION_MASK_EABI;		\
 	      error (INVALID_64BIT, "eabi");			\
 	    }							\
 	  if (TARGET_PROTOTYPE)					\
@@ -118,26 +130,30 @@ extern int dot_symbols;
 	      target_prototype = 0;				\
 	      error (INVALID_64BIT, "prototype");		\
 	    }							\
-	  if ((target_flags & MASK_POWERPC64) == 0)		\
+	  if ((rs6000_isa_flags & OPTION_MASK_POWERPC64) == 0)	\
 	    {							\
-	      target_flags |= MASK_POWERPC64;			\
+	      rs6000_isa_flags |= OPTION_MASK_POWERPC64;	\
 	      error ("-m64 requires a PowerPC64 cpu");		\
 	    }							\
-	  if ((target_flags_explicit & MASK_MINIMAL_TOC) != 0)	\
+	  if ((rs6000_isa_flags_explicit			\
+	       & OPTION_MASK_MINIMAL_TOC) != 0)			\
 	    {							\
-	      if (rs6000_explicit_options.cmodel		\
+	      if (global_options_set.x_rs6000_current_cmodel	\
 		  && rs6000_current_cmodel != CMODEL_SMALL)	\
 		error ("-mcmodel incompatible with other toc options"); \
 	      SET_CMODEL (CMODEL_SMALL);			\
 	    }							\
 	  else							\
 	    {							\
-	      if (!rs6000_explicit_options.cmodel)		\
+	      if (!global_options_set.x_rs6000_current_cmodel)	\
 		SET_CMODEL (CMODEL_MEDIUM);			\
 	      if (rs6000_current_cmodel != CMODEL_SMALL)	\
 		{						\
-		  TARGET_NO_FP_IN_TOC = 0;			\
-		  TARGET_NO_SUM_IN_TOC = 0;			\
+		  if (!global_options_set.x_TARGET_NO_FP_IN_TOC) \
+		    TARGET_NO_FP_IN_TOC				\
+		      = rs6000_current_cmodel == CMODEL_MEDIUM;	\
+		  if (!global_options_set.x_TARGET_NO_SUM_IN_TOC) \
+		    TARGET_NO_SUM_IN_TOC = 0;			\
 		}						\
 	    }							\
 	}							\
@@ -150,7 +166,7 @@ extern int dot_symbols;
 	      TARGET_PROFILE_KERNEL = 0;			\
 	      error (INVALID_32BIT, "profile-kernel");		\
 	    }							\
-	  if (rs6000_explicit_options.cmodel)			\
+	  if (global_options_set.x_rs6000_current_cmodel)	\
 	    {							\
 	      SET_CMODEL (CMODEL_SMALL);			\
 	      error (INVALID_32BIT, "cmodel");			\
@@ -159,22 +175,9 @@ extern int dot_symbols;
     }								\
   while (0)
 
-#ifdef	RS6000_BI_ARCH
-
-#undef	OPTION_TARGET_CPU_DEFAULT
-#define	OPTION_TARGET_CPU_DEFAULT \
-  (((TARGET_DEFAULT ^ target_flags) & MASK_64BIT) \
-   ? (char *) 0 : TARGET_CPU_DEFAULT)
-
-#endif
-
 #undef	ASM_DEFAULT_SPEC
 #undef	ASM_SPEC
 #undef	LINK_OS_LINUX_SPEC
-
-/* FIXME: This will quite possibly choose the wrong dynamic linker.  */
-#undef	LINK_OS_GNU_SPEC
-#define	LINK_OS_GNU_SPEC LINK_OS_LINUX_SPEC
 
 #ifndef	RS6000_BI_ARCH
 #define	ASM_DEFAULT_SPEC "-mppc64"
@@ -193,21 +196,14 @@ extern int dot_symbols;
 #endif
 
 #define ASM_SPEC32 "-a32 \
-%{mrelocatable} %{mrelocatable-lib} %{fpic:-K PIC} %{fPIC:-K PIC} \
-%{memb} %{!memb: %{msdata=eabi: -memb}} \
-%{!mlittle: %{!mlittle-endian: %{!mbig: %{!mbig-endian: \
-    %{mcall-freebsd: -mbig} \
-    %{mcall-i960-old: -mlittle} \
-    %{mcall-linux: -mbig} \
-    %{mcall-gnu: -mbig} \
-    %{mcall-netbsd: -mbig} \
-}}}}"
+%{mrelocatable} %{mrelocatable-lib} %{fpic|fpie|fPIC|fPIE:-K PIC} \
+%{memb|msdata=eabi: -memb}"
 
 #define ASM_SPEC64 "-a64"
 
 #define ASM_SPEC_COMMON "%(asm_cpu) \
-%{,assembler|,assembler-with-cpp: %{mregnames} %{mno-regnames}} \
-%{mlittle} %{mlittle-endian} %{mbig} %{mbig-endian}"
+%{,assembler|,assembler-with-cpp: %{mregnames} %{mno-regnames}}" \
+  ENDIAN_SELECT(" -mbig", " -mlittle", DEFAULT_ASM_ENDIAN)
 
 #undef	SUBSUBTARGET_EXTRA_SPECS
 #define SUBSUBTARGET_EXTRA_SPECS \
@@ -226,21 +222,17 @@ extern int dot_symbols;
 
 #ifndef RS6000_BI_ARCH
 
-/* 64-bit PowerPC Linux is always big-endian.  */
-#undef	TARGET_LITTLE_ENDIAN
-#define TARGET_LITTLE_ENDIAN	0
-
 /* 64-bit PowerPC Linux always has a TOC.  */
 #undef  TARGET_TOC
 #define	TARGET_TOC		1
 
 /* Some things from sysv4.h we don't do when 64 bit.  */
-#undef	TARGET_RELOCATABLE
-#define	TARGET_RELOCATABLE	0
-#undef	TARGET_EABI
-#define	TARGET_EABI		0
-#undef	TARGET_PROTOTYPE
-#define	TARGET_PROTOTYPE	0
+#undef	OPTION_RELOCATABLE
+#define	OPTION_RELOCATABLE	0
+#undef	OPTION_EABI
+#define	OPTION_EABI		0
+#undef	OPTION_PROTOTYPE
+#define	OPTION_PROTOTYPE	0
 #undef RELOCATABLE_NEEDS_FIXUP
 #define RELOCATABLE_NEEDS_FIXUP 0
 
@@ -309,17 +301,18 @@ extern int dot_symbols;
 
 #ifdef SINGLE_LIBC
 #define OPTION_GLIBC  (DEFAULT_LIBC == LIBC_GLIBC)
+#define OPTION_UCLIBC (DEFAULT_LIBC == LIBC_UCLIBC)
+#define OPTION_BIONIC (DEFAULT_LIBC == LIBC_BIONIC)
 #else
 #define OPTION_GLIBC  (linux_libc == LIBC_GLIBC)
+#define OPTION_UCLIBC (linux_libc == LIBC_UCLIBC)
+#define OPTION_BIONIC (linux_libc == LIBC_BIONIC)
 #endif
 
-/* glibc has float and long double forms of math functions.  */
-#undef  TARGET_C99_FUNCTIONS
-#define TARGET_C99_FUNCTIONS (OPTION_GLIBC)
-
-/* Whether we have sincos that follows the GNU extension.  */
-#undef  TARGET_HAS_SINCOS
-#define TARGET_HAS_SINCOS (OPTION_GLIBC)
+/* Determine what functions are present at the runtime;
+   this includes full c99 runtime and sincos.  */
+#undef TARGET_LIBC_HAS_FUNCTION
+#define TARGET_LIBC_HAS_FUNCTION linux_libc_has_function
 
 #undef  TARGET_OS_CPP_BUILTINS
 #define TARGET_OS_CPP_BUILTINS()			\
@@ -331,6 +324,8 @@ extern int dot_symbols;
 	  builtin_define ("__PPC64__");			\
 	  builtin_define ("__powerpc__");		\
 	  builtin_define ("__powerpc64__");		\
+	  if (!DOT_SYMBOLS)				\
+	    builtin_define ("_CALL_LINUX");		\
 	  builtin_assert ("cpu=powerpc64");		\
 	  builtin_assert ("machine=powerpc64");		\
 	}						\
@@ -373,7 +368,11 @@ extern int dot_symbols;
 #define LINK_OS_DEFAULT_SPEC "%(link_os_linux)"
 
 #define GLIBC_DYNAMIC_LINKER32 "/lib/ld.so.1"
-#define GLIBC_DYNAMIC_LINKER64 "/lib64/ld64.so.1"
+#ifdef LINUX64_DEFAULT_ABI_ELFv2
+#define GLIBC_DYNAMIC_LINKER64 "%{mabi=elfv1:/lib64/ld64.so.1;:/lib64/ld64.so.2}"
+#else
+#define GLIBC_DYNAMIC_LINKER64 "%{mabi=elfv2:/lib64/ld64.so.2;:/lib64/ld64.so.1}"
+#endif
 #define UCLIBC_DYNAMIC_LINKER32 "/lib/ld-uClibc.so.0"
 #define UCLIBC_DYNAMIC_LINKER64 "/lib/ld64-uClibc.so.0"
 #if DEFAULT_LIBC == LIBC_UCLIBC
@@ -383,19 +382,37 @@ extern int dot_symbols;
 #else
 #error "Unsupported DEFAULT_LIBC"
 #endif
-#define LINUX_DYNAMIC_LINKER32 \
+#define GNU_USER_DYNAMIC_LINKER32 \
   CHOOSE_DYNAMIC_LINKER (GLIBC_DYNAMIC_LINKER32, UCLIBC_DYNAMIC_LINKER32)
-#define LINUX_DYNAMIC_LINKER64 \
+#define GNU_USER_DYNAMIC_LINKER64 \
   CHOOSE_DYNAMIC_LINKER (GLIBC_DYNAMIC_LINKER64, UCLIBC_DYNAMIC_LINKER64)
 
+#undef  DEFAULT_ASM_ENDIAN
+#if (TARGET_DEFAULT & MASK_LITTLE_ENDIAN)
+#define DEFAULT_ASM_ENDIAN " -mlittle"
+#define LINK_OS_LINUX_EMUL32 ENDIAN_SELECT(" -m elf32ppclinux",		\
+					   " -m elf32lppclinux",	\
+					   " -m elf32lppclinux")
+#define LINK_OS_LINUX_EMUL64 ENDIAN_SELECT(" -m elf64ppc",		\
+					   " -m elf64lppc",		\
+					   " -m elf64lppc")
+#else
+#define DEFAULT_ASM_ENDIAN " -mbig"
+#define LINK_OS_LINUX_EMUL32 ENDIAN_SELECT(" -m elf32ppclinux",		\
+					   " -m elf32lppclinux",	\
+					   " -m elf32ppclinux")
+#define LINK_OS_LINUX_EMUL64 ENDIAN_SELECT(" -m elf64ppc",		\
+					   " -m elf64lppc",		\
+					   " -m elf64ppc")
+#endif
 
-#define LINK_OS_LINUX_SPEC32 "-m elf32ppclinux %{!shared: %{!static: \
+#define LINK_OS_LINUX_SPEC32 LINK_OS_LINUX_EMUL32 " %{!shared: %{!static: \
   %{rdynamic:-export-dynamic} \
-  -dynamic-linker " LINUX_DYNAMIC_LINKER32 "}}"
+  -dynamic-linker " GNU_USER_DYNAMIC_LINKER32 "}}"
 
-#define LINK_OS_LINUX_SPEC64 "-m elf64ppc %{!shared: %{!static: \
+#define LINK_OS_LINUX_SPEC64 LINK_OS_LINUX_EMUL64 " %{!shared: %{!static: \
   %{rdynamic:-export-dynamic} \
-  -dynamic-linker " LINUX_DYNAMIC_LINKER64 "}}"
+  -dynamic-linker " GNU_USER_DYNAMIC_LINKER64 "}}"
 
 #undef  TOC_SECTION_ASM_OP
 #define TOC_SECTION_ASM_OP \
@@ -410,9 +427,6 @@ extern int dot_symbols;
    : ((TARGET_RELOCATABLE || flag_pic)			\
       ? "\t.section\t\".got2\",\"aw\""			\
       : "\t.section\t\".got1\",\"aw\""))
-
-#undef  TARGET_VERSION
-#define TARGET_VERSION fprintf (stderr, " (PowerPC64 GNU/Linux)");
 
 /* Must be at least as big as our pointer type.  */
 #undef	SIZE_TYPE
@@ -433,10 +447,6 @@ extern int dot_symbols;
 /* Override rs6000.h definition.  */
 #undef  ASM_APP_OFF
 #define ASM_APP_OFF "#NO_APP\n"
-
-/* PowerPC no-op instruction.  */
-#undef  RS6000_CALL_GLUE
-#define RS6000_CALL_GLUE (TARGET_64BIT ? "nop" : "cror 31,31,31")
 
 #undef  RS6000_MCOUNT
 #define RS6000_MCOUNT "_mcount"
@@ -547,8 +557,6 @@ extern int dot_symbols;
 #define USE_LD_AS_NEEDED 1
 #endif
 
-#define MD_UNWIND_SUPPORT "config/rs6000/linux-unwind.h"
-
 #ifdef TARGET_LIBC_PROVIDES_SSP
 /* ppc32 glibc provides __stack_chk_guard in -0x7008(2),
    ppc64 glibc provides it at -0x7010(13).  */
@@ -567,3 +575,9 @@ extern int dot_symbols;
 
 /* The default value isn't sufficient in 64-bit mode.  */
 #define STACK_CHECK_PROTECT (TARGET_64BIT ? 16 * 1024 : 12 * 1024)
+
+/* Software floating point support for exceptions and rounding modes
+   depends on the C library in use.  */
+#undef TARGET_FLOAT_EXCEPTIONS_ROUNDING_SUPPORTED_P
+#define TARGET_FLOAT_EXCEPTIONS_ROUNDING_SUPPORTED_P \
+  rs6000_linux_float_exceptions_rounding_supported_p

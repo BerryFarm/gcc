@@ -24,7 +24,5 @@ end module
 
   use foo
   type (bar) :: foobar(2)
-  foobar = bar()           ! { dg-error "currently not implemented" }
+  foobar = bar()           ! There was a not-implemented error here 
 end
-
-! { dg-final { cleanup-modules "foo" } }

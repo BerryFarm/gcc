@@ -1,7 +1,6 @@
 // Safe sequence/iterator base implementation  -*- C++ -*-
 
-// Copyright (C) 2003, 2004, 2005, 2006, 2009, 2010
-// Free Software Foundation, Inc.
+// Copyright (C) 2003-2014 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -79,7 +78,7 @@ namespace __gnu_debug
     { }
 
     /** Initialize the iterator to reference the sequence pointed to
-     *  by @p__seq. @p __constant is true when we are initializing a
+     *  by @p __seq. @p __constant is true when we are initializing a
      *  constant iterator, and false if it is a mutable iterator. Note
      *  that @p __seq may be NULL, in which case the iterator will be
      *  singular. Otherwise, the iterator will reference @p __seq and
@@ -192,6 +191,15 @@ namespace __gnu_debug
     _Safe_sequence_base()
     : _M_iterators(0), _M_const_iterators(0), _M_version(1)
     { }
+
+#if __cplusplus >= 201103L
+    _Safe_sequence_base(const _Safe_sequence_base&) noexcept
+      : _Safe_sequence_base() { }
+
+    _Safe_sequence_base(_Safe_sequence_base&& __x) noexcept
+      : _Safe_sequence_base()
+    { _M_swap(__x); }
+#endif
 
     /** Notify all iterators that reference this sequence that the
 	sequence is being destroyed. */

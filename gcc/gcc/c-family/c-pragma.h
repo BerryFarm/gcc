@@ -1,6 +1,5 @@
 /* Pragma related interfaces.
-   Copyright (C) 1995, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
-   2007, 2008, 2009, 2010  Free Software Foundation, Inc.
+   Copyright (C) 1995-2014 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -30,47 +29,93 @@ typedef enum pragma_kind {
 
   PRAGMA_OMP_ATOMIC,
   PRAGMA_OMP_BARRIER,
+  PRAGMA_OMP_CANCEL,
+  PRAGMA_OMP_CANCELLATION_POINT,
   PRAGMA_OMP_CRITICAL,
+  PRAGMA_OMP_DECLARE_REDUCTION,
+  PRAGMA_OMP_DISTRIBUTE,
+  PRAGMA_OMP_END_DECLARE_TARGET,
   PRAGMA_OMP_FLUSH,
   PRAGMA_OMP_FOR,
   PRAGMA_OMP_MASTER,
   PRAGMA_OMP_ORDERED,
   PRAGMA_OMP_PARALLEL,
-  PRAGMA_OMP_PARALLEL_FOR,
-  PRAGMA_OMP_PARALLEL_SECTIONS,
   PRAGMA_OMP_SECTION,
   PRAGMA_OMP_SECTIONS,
+  PRAGMA_OMP_SIMD,
   PRAGMA_OMP_SINGLE,
+  PRAGMA_OMP_TARGET,
   PRAGMA_OMP_TASK,
+  PRAGMA_OMP_TASKGROUP,
   PRAGMA_OMP_TASKWAIT,
+  PRAGMA_OMP_TASKYIELD,
   PRAGMA_OMP_THREADPRIVATE,
+  PRAGMA_OMP_TEAMS,
+
+  /* Top level clause to handle all Cilk Plus pragma simd clauses.  */
+  PRAGMA_CILK_SIMD,
 
   PRAGMA_GCC_PCH_PREPROCESS,
+  PRAGMA_IVDEP,
 
   PRAGMA_FIRST_EXTERNAL
 } pragma_kind;
 
 
-/* All clauses defined by OpenMP 2.5 and 3.0.
+/* All clauses defined by OpenMP 2.5, 3.0, 3.1 and 4.0.
    Used internally by both C and C++ parsers.  */
 typedef enum pragma_omp_clause {
   PRAGMA_OMP_CLAUSE_NONE = 0,
 
+  PRAGMA_OMP_CLAUSE_ALIGNED,
   PRAGMA_OMP_CLAUSE_COLLAPSE,
   PRAGMA_OMP_CLAUSE_COPYIN,
   PRAGMA_OMP_CLAUSE_COPYPRIVATE,
   PRAGMA_OMP_CLAUSE_DEFAULT,
+  PRAGMA_OMP_CLAUSE_DEPEND,
+  PRAGMA_OMP_CLAUSE_DEVICE,
+  PRAGMA_OMP_CLAUSE_DIST_SCHEDULE,
+  PRAGMA_OMP_CLAUSE_FINAL,
   PRAGMA_OMP_CLAUSE_FIRSTPRIVATE,
+  PRAGMA_OMP_CLAUSE_FOR,
+  PRAGMA_OMP_CLAUSE_FROM,
   PRAGMA_OMP_CLAUSE_IF,
+  PRAGMA_OMP_CLAUSE_INBRANCH,
   PRAGMA_OMP_CLAUSE_LASTPRIVATE,
+  PRAGMA_OMP_CLAUSE_LINEAR,
+  PRAGMA_OMP_CLAUSE_MAP,
+  PRAGMA_OMP_CLAUSE_MERGEABLE,
+  PRAGMA_OMP_CLAUSE_NOTINBRANCH,
   PRAGMA_OMP_CLAUSE_NOWAIT,
+  PRAGMA_OMP_CLAUSE_NUM_TEAMS,
   PRAGMA_OMP_CLAUSE_NUM_THREADS,
   PRAGMA_OMP_CLAUSE_ORDERED,
+  PRAGMA_OMP_CLAUSE_PARALLEL,
   PRAGMA_OMP_CLAUSE_PRIVATE,
+  PRAGMA_OMP_CLAUSE_PROC_BIND,
   PRAGMA_OMP_CLAUSE_REDUCTION,
+  PRAGMA_OMP_CLAUSE_SAFELEN,
   PRAGMA_OMP_CLAUSE_SCHEDULE,
+  PRAGMA_OMP_CLAUSE_SECTIONS,
   PRAGMA_OMP_CLAUSE_SHARED,
-  PRAGMA_OMP_CLAUSE_UNTIED
+  PRAGMA_OMP_CLAUSE_SIMDLEN,
+  PRAGMA_OMP_CLAUSE_TASKGROUP,
+  PRAGMA_OMP_CLAUSE_THREAD_LIMIT,
+  PRAGMA_OMP_CLAUSE_TO,
+  PRAGMA_OMP_CLAUSE_UNIFORM,
+  PRAGMA_OMP_CLAUSE_UNTIED,
+  
+  /* Clauses for Cilk Plus SIMD-enabled function.  */
+  PRAGMA_CILK_CLAUSE_NOMASK,
+  PRAGMA_CILK_CLAUSE_MASK,
+  PRAGMA_CILK_CLAUSE_VECTORLENGTH,
+  PRAGMA_CILK_CLAUSE_NONE = PRAGMA_OMP_CLAUSE_NONE,
+  PRAGMA_CILK_CLAUSE_LINEAR = PRAGMA_OMP_CLAUSE_LINEAR,
+  PRAGMA_CILK_CLAUSE_PRIVATE = PRAGMA_OMP_CLAUSE_PRIVATE,
+  PRAGMA_CILK_CLAUSE_FIRSTPRIVATE = PRAGMA_OMP_CLAUSE_FIRSTPRIVATE,
+  PRAGMA_CILK_CLAUSE_LASTPRIVATE = PRAGMA_OMP_CLAUSE_LASTPRIVATE,
+  PRAGMA_CILK_CLAUSE_REDUCTION = PRAGMA_OMP_CLAUSE_REDUCTION,
+  PRAGMA_CILK_CLAUSE_UNIFORM = PRAGMA_OMP_CLAUSE_UNIFORM
 } pragma_omp_clause;
 
 extern struct cpp_reader* parse_in;
@@ -84,10 +129,40 @@ extern bool pop_visibility (int);
 extern void init_pragma (void);
 
 /* Front-end wrappers for pragma registration.  */
-typedef void (*pragma_handler)(struct cpp_reader *);
-extern void c_register_pragma (const char *, const char *, pragma_handler);
-extern void c_register_pragma_with_expansion (const char *, const char *,
-					      pragma_handler);
+typedef void (*pragma_handler_1arg)(struct cpp_reader *);
+/* A second pragma handler, which adds a void * argument allowing to pass extra
+   data to the handler.  */
+typedef void (*pragma_handler_2arg)(struct cpp_reader *, void *);
+
+/* This union allows to abstract the different handlers.  */
+union gen_pragma_handler {
+  pragma_handler_1arg handler_1arg;
+  pragma_handler_2arg handler_2arg;
+};
+/* Internally used to keep the data of the handler.  */
+struct internal_pragma_handler_d {
+  union gen_pragma_handler handler;
+  /* Permits to know if handler is a pragma_handler_1arg (extra_data is false)
+     or a pragma_handler_2arg (extra_data is true).  */
+  bool extra_data;
+  /* A data field which can be used when extra_data is true.  */
+  void * data;
+};
+typedef struct internal_pragma_handler_d internal_pragma_handler;
+
+extern void c_register_pragma (const char *space, const char *name,
+                               pragma_handler_1arg handler);
+extern void c_register_pragma_with_data (const char *space, const char *name,
+                                         pragma_handler_2arg handler,
+                                         void *data);
+
+extern void c_register_pragma_with_expansion (const char *space,
+                                              const char *name,
+                                              pragma_handler_1arg handler);
+extern void c_register_pragma_with_expansion_and_data (const char *space,
+                                                       const char *name,
+                                                   pragma_handler_2arg handler,
+                                                       void *data);
 extern void c_invoke_pragma_handler (unsigned int);
 
 extern void maybe_apply_pragma_weak (tree);
@@ -112,5 +187,7 @@ extern enum cpp_ttype c_lex_with_flags (tree *, location_t *, unsigned char *,
 					int);
 
 extern void c_pp_lookup_pragma (unsigned int, const char **, const char **);
+
+extern GTY(()) tree pragma_extern_prefix;
 
 #endif /* GCC_C_PRAGMA_H */

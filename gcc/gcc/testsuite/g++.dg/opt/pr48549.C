@@ -1,11 +1,15 @@
 // PR rtl-optimization/48549
 // { dg-do compile }
 // { dg-options "-fcompare-debug -O2" }
+// { dg-xfail-if "" { powerpc-ibm-aix* } { "*" } { "" } }
+
+__extension__ typedef __PTRDIFF_TYPE__ pdiff_t;
 
 void
 foo (void *from, void *to)
 {
-  long offset = reinterpret_cast <long>(to) - reinterpret_cast <long>(from);
+  pdiff_t offset = reinterpret_cast <pdiff_t>(to)
+		   - reinterpret_cast <pdiff_t>(from);
   if (offset != static_cast <int>(offset))
     *(int *) 0xC0DE = 0;
   reinterpret_cast <int *>(from)[1] = offset;

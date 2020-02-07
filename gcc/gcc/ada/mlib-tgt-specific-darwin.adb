@@ -7,7 +7,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2001-2008, Free Software Foundation, Inc.         --
+--          Copyright (C) 2001-2011, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -55,15 +55,10 @@ package body MLib.Tgt.Specific is
 
    --  Local objects
 
-   Flat_Namespace : aliased String := "-Wl,-flat_namespace";
-   --  Instruct the linker to build the shared library as a flat
-   --  namespace image. The default is a two-level namespace image.
-
    Shared_Libgcc  : aliased String := "-shared-libgcc";
 
    Shared_Options : constant Argument_List :=
-                      (1 => Flat_Namespace'Access,
-                       2 => Shared_Libgcc'Access);
+                      (1 => Shared_Libgcc'Access);
 
    ---------------------------
    -- Build_Dynamic_Library --

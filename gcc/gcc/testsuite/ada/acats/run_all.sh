@@ -216,7 +216,7 @@ for chapter in $chapters; do
    counti=0
    for i in `cat $dir/tests/$chapter/${chapter}.lst`; do 
       counti=`expr $counti + 1`
-      extraflags=""
+      extraflags="-gnat95"
       grep $i $testdir/overflow.lst > /dev/null 2>&1
       if [ $? -eq 0 ]; then
          extraflags="$extraflags -gnato"
@@ -225,13 +225,13 @@ for chapter in $chapters; do
       if [ $? -eq 0 ]; then
          extraflags="$extraflags -gnatE"
       fi
+      grep $i $testdir/floatstore.lst > /dev/null 2>&1
+      if [ $? -eq 0 ]; then
+         extraflags="$extraflags -ffloat-store"
+      fi
       grep $i $testdir/stackcheck.lst > /dev/null 2>&1
       if [ $? -eq 0 ]; then
          extraflags="$extraflags -fstack-check"
-      fi
-      grep $i $testdir/ada95.lst > /dev/null 2>&1
-      if [ $? -eq 0 ]; then
-         extraflags="$extraflags -gnat95"
       fi
       test=$dir/tests/$chapter/$i
       mkdir $test && cd $test >> $dir/acats.log 2>&1
@@ -257,7 +257,6 @@ for chapter in $chapters; do
         cxb30*) EXTERNAL_OBJECTS="$dir/support/cxb30040.o $dir/support/cxb30060.o $dir/support/cxb30130.o $dir/support/cxb30131.o";;
         ca1020e) rm -f ca1020e_func1.adb ca1020e_func2.adb ca1020e_proc1.adb ca1020e_proc2.adb > /dev/null 2>&1;;
         ca14028) rm -f ca14028_func2.ads ca14028_func3.ads ca14028_proc1.ads ca14028_proc3.ads > /dev/null 2>&1;;
-        cxh1001) extraflags="-a -f"; echo "pragma Normalize_Scalars;" > gnat.adc
       esac
       if [ "$main" = "" ]; then
          display "FAIL:	$i"

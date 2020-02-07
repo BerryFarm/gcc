@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1995-2010, Free Software Foundation, Inc.         --
+--          Copyright (C) 1995-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -48,13 +48,16 @@
 --  be used by other predefined packages. User access to this package is via
 --  a renaming of this package in GNAT.OS_Lib (file g-os_lib.ads).
 
-pragma Compiler_Unit;
+--  Note: a distinct body for this spec is included in the .NET runtime library
+--  and must be kept in sync with changes made in this file.
+
+pragma Compiler_Unit_Warning;
 
 with System;
 with System.Strings;
 
 package System.OS_Lib is
-   pragma Elaborate_Body (OS_Lib);
+   pragma Preelaborate;
 
    -----------------------
    -- String Operations --
@@ -174,7 +177,7 @@ package System.OS_Lib is
    --  File descriptors for standard input output files
 
    Invalid_FD : constant File_Descriptor := -1;
-   --  File descriptor returned when error in opening/creating file;
+   --  File descriptor returned when error in opening/creating file
 
    type Mode is (Binary, Text);
    for Mode'Size use Integer'Size;
@@ -302,6 +305,13 @@ package System.OS_Lib is
       Success  : out Boolean);
    --  Rename a file. Success is set True or False indicating if the rename is
    --  successful or not.
+   --
+   --  WARNING: In one very important respect, this function is significantly
+   --  non-portable. If New_Name already exists then on Unix systems, the call
+   --  deletes the existing file, and the call signals success. On Windows, the
+   --  call fails, without doing the rename operation. See also the procedure
+   --  Ada.Directories.Rename, which portably provides the windows semantics,
+   --  i.e. fails if the output file already exists.
 
    --  The following defines the mode for the Copy_File procedure below. Note
    --  that "time stamps and other file attributes" in the descriptions below
@@ -343,7 +353,7 @@ package System.OS_Lib is
    --  effect of "cp -p" on Unix systems, and None corresponds to the typical
    --  effect of "cp" on Unix systems.
 
-   --  Note: Time_Stamps and Full are not supported on VMS and VxWorks
+   --  Note: Time_Stamps and Full are not supported on VMS and VxWorks 5
 
    procedure Copy_File
      (Name     : String;
@@ -371,7 +381,7 @@ package System.OS_Lib is
    --  furthermore Dest must be writable. Success will be set to True if the
    --  operation was successful and False otherwise.
    --
-   --  Note: this procedure is not supported on VMS and VxWorks. On these
+   --  Note: this procedure is not supported on VMS and VxWorks 5. On these
    --  platforms, Success is always set to False.
 
    function Read
@@ -445,9 +455,10 @@ package System.OS_Lib is
    --  directory pointed to. This is slightly less efficient, since it
    --  requires system calls.
    --
-   --  If Name cannot be resolved or is null on entry (for example if there is
-   --  symbolic link circularity, e.g. A is a symbolic link for B, and B is a
-   --  symbolic link for A), then Normalize_Pathname returns an empty  string.
+   --  If Name cannot be resolved, is invalid (for example if it is too big) or
+   --  is null on entry (for example if there is symbolic link circularity,
+   --  e.g. A is a symbolic link for B, and B is a symbolic link for A), then
+   --  Normalize_Pathname returns an empty string.
    --
    --  In VMS, if Name follows the VMS syntax file specification, it is first
    --  converted into Unix syntax. If the conversion fails, Normalize_Pathname
@@ -707,7 +718,8 @@ package System.OS_Lib is
    --
    --  This function will always set Success to False under VxWorks and other
    --  similar operating systems which have no notion of the concept of
-   --  dynamically executable file.
+   --  dynamically executable file. Otherwise Success is set True if the exit
+   --  status of the spawned process is zero.
 
    function Spawn
      (Program_Name : String;
@@ -800,10 +812,8 @@ package System.OS_Lib is
    --  Similar to the procedure above, but saves the output of the command to
    --  a file with the name Output_File.
    --
-   --  Success is set to True if the command is executed and its output
-   --  successfully written to the file. Invalid_Pid is returned if the output
-   --  file could not be created or if the program could not be spawned
-   --  successfully.
+   --  Invalid_Pid is returned if the output file could not be created or if
+   --  the program could not be spawned successfully.
    --
    --  Spawning processes from tasking programs is not recommended. See
    --  "NOTE: Spawn in tasking programs" below.
@@ -887,9 +897,10 @@ package System.OS_Lib is
    --  If the parent is using tasking, and needs to spawn subprocesses at
    --  arbitrary times, one technique is for the parent to spawn (very early)
    --  a particular spawn-manager subprocess whose job is to spawn other
-   --  processes. The spawn-manager avoids tasking. The parent sends messages
-   --  to the spawn-manager requesting it to spawn processes, using whatever
-   --  inter-process communication mechanism you like, such as sockets.
+   --  processes. The spawn-manager must avoid tasking. The parent sends
+   --  messages to the spawn-manager requesting it to spawn processes, using
+   --  whatever inter-process communication mechanism you like, such as
+   --  sockets.
 
    --  In short, mixing spawning of subprocesses with tasking is a tricky
    --  business, and should be avoided if possible, but if it is necessary,
@@ -922,7 +933,6 @@ package System.OS_Lib is
 
    procedure OS_Exit (Status : Integer);
    pragma No_Return (OS_Exit);
-
    --  Exit to OS with given status code (program is terminated). Note that
    --  this is abrupt termination. All tasks are immediately terminated. There
    --  are no finalization or other Ada-specific cleanup actions performed. On
@@ -954,6 +964,13 @@ package System.OS_Lib is
    procedure Set_Errno (Errno : Integer);
    pragma Import (C, Set_Errno, "__set_errno");
    --  Set the task-safe error number
+
+   function Errno_Message
+     (Err     : Integer := Errno;
+      Default : String  := "") return String;
+   --  Return a message describing the given Errno value. If none is provided
+   --  by the system, return Default if not empty, else return a generic
+   --  message indicating the numeric errno value.
 
    Directory_Separator : constant Character;
    --  The character that is used to separate parts of a pathname

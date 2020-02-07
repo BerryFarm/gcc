@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1998-2010, Free Software Foundation, Inc.         --
+--          Copyright (C) 1998-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -272,18 +272,22 @@ package body Xref_Lib is
          end if;
       end if;
 
-      File_Ref :=
-        Add_To_Xref_File
-          (Entity (File_Start .. Line_Start - 1), Visited => True);
-      Pattern.File_Ref := File_Ref;
+      declare
+         File_Name : String := Entity (File_Start .. Line_Start - 1);
 
-      Add_Line (Pattern.File_Ref, Line_Num, Col_Num);
+      begin
+         Osint.Canonical_Case_File_Name (File_Name);
+         File_Ref := Add_To_Xref_File (File_Name, Visited => True);
+         Pattern.File_Ref := File_Ref;
 
-      File_Ref :=
-        Add_To_Xref_File
-          (ALI_File_Name (Entity (File_Start .. Line_Start - 1)),
-           Visited      => False,
-           Emit_Warning => True);
+         Add_Line (Pattern.File_Ref, Line_Num, Col_Num);
+
+         File_Ref :=
+           Add_To_Xref_File
+             (ALI_File_Name (File_Name),
+              Visited      => False,
+              Emit_Warning => True);
+      end;
    end Add_Entity;
 
    -------------------
@@ -538,6 +542,7 @@ package body Xref_Lib is
 
          when 'h' => return "interface";
          when 'g' => return "macro";
+         when 'G' => return "function macro";
          when 'J' => return "class";
          when 'K' => return "package";
          when 'k' => return "generic package";
@@ -924,10 +929,11 @@ package body Xref_Lib is
          end;
       end if;
 
-      if Ali (Ptr) = '<'
-        or else Ali (Ptr) = '('
-        or else Ali (Ptr) = '{'
-      then
+      while Ptr <= Ali'Last
+         and then (Ali (Ptr) = '<'
+                   or else Ali (Ptr) = '('
+                   or else Ali (Ptr) = '{')
+      loop
          --  Here we have a type derivation information. The format is
          --  <3|12I45> which means that the current entity is derived from the
          --  type defined in unit number 3, line 12 column 45. The pipe and
@@ -1064,7 +1070,7 @@ package body Xref_Lib is
             end loop;
             Ptr := Ptr + 1;
          end if;
-      end if;
+      end loop;
 
       --  To find the body, we will have to parse the file too
 
@@ -1103,11 +1109,12 @@ package body Xref_Lib is
                Ptr := Ptr + 1;
             end if;
 
-            --  Imported entities might special indication as to their external
-            --  name:
-            --    5U14*Foo2 5>20 6b<c,myfoo2>22
+            --  Imported entities may have an indication specifying information
+            --  about the corresponding external name:
+            --    5U14*Foo2 5>20 6b<c,myfoo2>22   # Imported entity
+            --    5U14*Foo2 5>20 6i<c,myfoo2>22   # Exported entity
 
-            if R_Type = 'b'
+            if (R_Type = 'b' or else R_Type = 'i')
               and then Ali (Ptr) = '<'
             then
                while Ptr <= Ali'Last
@@ -1764,11 +1771,24 @@ package body Xref_Lib is
          then
             begin
                Open (Ali_Name.all, ALIfile);
-               while ALIfile.Buffer (ALIfile.Current_Line) /= EOF loop
+
+               --  The cross-reference section in the ALI file may be followed
+               --  by other sections, which can be identified by the starting
+               --  character of every line, which should neither be 'X' nor a
+               --  figure in '1' .. '9'.
+
+               --  The loop tests below also take into account the end-of-file
+               --  possibility.
+
+               while ALIfile.Buffer (ALIfile.Current_Line) = 'X' loop
                   Parse_X_Filename (ALIfile);
-                  Parse_Identifier_Info
-                    (Pattern, ALIfile, Local_Symbols,
-                     Der_Info, Type_Tree, Wide_Search, Labels_As_Ref => True);
+
+                  while ALIfile.Buffer (ALIfile.Current_Line) in '1' .. '9'
+                  loop
+                     Parse_Identifier_Info
+                       (Pattern, ALIfile, Local_Symbols, Der_Info, Type_Tree,
+                        Wide_Search, Labels_As_Ref => True);
+                  end loop;
                end loop;
 
             exception
@@ -1818,11 +1838,23 @@ package body Xref_Lib is
             if Read_Only or else Is_Writable_File (F) then
                Open (F, ALIfile, True);
 
-               while ALIfile.Buffer (ALIfile.Current_Line) /= EOF loop
+               --  The cross-reference section in the ALI file may be followed
+               --  by other sections, which can be identified by the starting
+               --  character of every line, which should neither be 'X' nor a
+               --  figure in '1' .. '9'.
+
+               --  The loop tests below also take into account the end-of-file
+               --  possibility.
+
+               while ALIfile.Buffer (ALIfile.Current_Line) = 'X' loop
                   Parse_X_Filename (ALIfile);
-                  Parse_Identifier_Info
-                    (Null_Pattern, ALIfile, Local_Symbols, Der_Info,
-                     Labels_As_Ref => False);
+
+                  while ALIfile.Buffer (ALIfile.Current_Line) in '1' .. '9'
+                  loop
+                     Parse_Identifier_Info
+                       (Null_Pattern, ALIfile, Local_Symbols, Der_Info,
+                        Labels_As_Ref => False);
+                  end loop;
                end loop;
             end if;
 

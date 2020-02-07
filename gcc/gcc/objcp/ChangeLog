@@ -1,19 +1,86 @@
-2012-03-01  Release Manager
+2014-07-16  Release Manager
 
-	* GCC 4.6.3 released.
+	* GCC 4.9.1 released.
 
-2011-10-26  Release Manager
+2014-04-22  Release Manager
 
-	* GCC 4.6.2 released.
+	* GCC 4.9.0 released.
 
-2011-06-27  Release Manager
+2014-01-02  Richard Sandiford  <rdsandiford@googlemail.com>
 
-	* GCC 4.6.1 released.
+	Update copyright years
 
-2011-03-25  Release Manager
+2013-09-25  Tom Tromey  <tromey@redhat.com>
 
-	* GCC 4.6.0 released.
+	* Make-lang.in (START_HDRS, cc1objplus-checksum.o)
+	(objcp/objcp-lang.o, objcp/objcp-decl.o
+	(objcp/objc-runtime-shared-support.o)
+	(objcp/objc-gnu-runtime-abi-01.o objcp/objc-next-runtime-abi-01.o)
+	(objcp/objc-next-runtime-abi-02.o, objcp/objcp-act.o)
+	(objcp/objc-encoding.o, objcp/objc-map.o): Use COMPILE and
+	POSTCOMPILE.  Remove explicit dependencies.
 
+2013-05-16  Jason Merrill  <jason@redhat.com>
+
+	* Make-lang.in (cc1objplus$(exeext)): Use link mutex.
+
+2012-06-02  Jason Merrill  <jason@redhat.com>
+
+	* objcp-decl.c (objcp_start_struct): Adjust for change in
+	begin_class_definition prototype.
+
+2011-10-14  Nicola Pero  <nicola.pero@meta-innovation.com>
+
+	* Make-lang.in (OBJCXX_OBJS): Added objc-map.o.
+	(objcp/objc-map.o): New rule.
+	(objcp/objcp-act.o): Depend on objc/objc-map.h.
+	* config-lang.in (gtfiles): Added objc-map.h.
+
+2011-07-11  Nicola Pero  <nicola.pero@meta-innovation.com>
+
+	* Make-lang.in (objcp/objc-runtime-shared-support.o): Do not
+	depend on OBSTACK_H.
+	(objcp/objc-gnu-runtime-abi-01.o): Likewise.
+	(objcp/objc-next-runtime-abi-01.o): Likewise.
+	(objcp/objc-next-runtime-abi-02.o): Likewise.
+	(objcp/objcp-act.o): Likewise.
+
+2011-07-04  Nicola Pero  <nicola.pero@meta-innovation.com>
+
+	* Make-lang.in (OBJCXX_OBJS): Added objc-encoding.o.
+	(objcp/objcp-lang.o): Reordered dependencies.  Depend on GGC_H.
+	(objcp/objcp-decl.o): Reordered dependencies.
+	(objcp/objc-runtime-shared-support.o): Reordered dependencies.
+	Updated them to be identical to the corresponding new objc/ ones,
+	with the addition of objcp-decl.h.
+	(objcp/objc-runtime-shared-support.o): Likewise.
+	(objcp/objc-gnu-runtime-abi-01.o): Likewise.
+	(objcp/objc-next-runtime-abi-01.o): Likewise.
+	(objcp/objc-next-runtime-abi-02.o): Likewise.
+	(objcp/objcp-act.o): Reordered dependencies.  Added dependency on
+	objc-encoding.h.
+	(objcp/objc-encoding.o): New rule.
+	
+2011-04-15  Nicola Pero  <nicola.pero@meta-innovation.com>
+
+	* objcp-decl.c (objcp_finish_struct): Use
+	objc_detect_field_duplicates instead of having a local
+	implementation.
+
+2011-04-12  Nathan Froyd  <froydnj@codesourcery.com>
+
+	* objcp-lang.c (objcxx_init_ts): Call objc_common_init_ts and
+	cp_common_init_ts.
+
+2011-03-21  Nicola Pero  <nicola.pero@meta-innovation.com>
+
+	PR bootstrap/48167
+	* Make-lang.in (START_HDRS): Added CXX_PARSER_H and
+	CXX_PRETTY_PRINT_H.
+	* config-lang.in (gtfiles): Added cp/parser.h and reorganized list
+	so that it is more obvious that it is identical to the C++ one
+	with the addition of some files at the end.
+	
 2011-03-06  Joseph Myers  <joseph@codesourcery.com>
 
 	* lang-specs.h: Match -save-temps* instead of -save-temps.
@@ -395,7 +462,7 @@
 	* objcp-lang.c: Likewise.
 
 
-Copyright (C) 2005, 2006, 2007, 2008 Free Software Foundation, Inc.
+Copyright (C) 2005-2014 Free Software Foundation, Inc.
 
 Copying and distribution of this file, with or without modification,
 are permitted in any medium without royalty provided the copyright

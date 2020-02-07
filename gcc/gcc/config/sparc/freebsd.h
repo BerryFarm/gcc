@@ -1,6 +1,5 @@
 /* Definitions for Sun SPARC64 running FreeBSD using the ELF format
-   Copyright (C) 2001, 2002, 2004, 2005, 2006, 2007, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2001-2014 Free Software Foundation, Inc.
    Contributed by David E. O'Brien <obrien@FreeBSD.org> and BSDi.
 
 This file is part of GCC.
@@ -82,9 +81,6 @@ along with GCC; see the file COPYING3.  If not see
 
 /* Definitions for 64-bit SPARC running systems with ELF. */
 
-#undef  TARGET_VERSION
-#define TARGET_VERSION fprintf (stderr, " (FreeBSD/sparc64 ELF)");
-
 #define TARGET_ELF		1
 
 /* XXX */
@@ -101,31 +97,7 @@ along with GCC; see the file COPYING3.  If not see
 #undef  SPARC_DEFAULT_CMODEL
 #define SPARC_DEFAULT_CMODEL	CM_MEDLOW
 
-#define ENABLE_EXECUTE_STACK						\
-  static int need_enable_exec_stack;					\
-  static void check_enabling(void) __attribute__ ((constructor));	\
-  static void check_enabling(void)					\
-  {									\
-    extern int sysctlbyname(const char *, void *, size_t *, void *, size_t);\
-    int prot = 0;							\
-    size_t len = sizeof(prot);						\
-									\
-    sysctlbyname ("kern.stackprot", &prot, &len, NULL, 0);		\
-    if (prot != 7)							\
-      need_enable_exec_stack = 1;					\
-  }									\
-  extern void __enable_execute_stack (void *);				\
-  void __enable_execute_stack (void *addr)				\
-  {									\
-    if (!need_enable_exec_stack)					\
-      return;								\
-    else {								\
-      /* 7 is PROT_READ | PROT_WRITE | PROT_EXEC */ 			\
-      if (mprotect (addr, TRAMPOLINE_SIZE, 7) < 0)			\
-        perror ("mprotect of trampoline code");				\
-    }									\
-  }
-
+#define HAVE_ENABLE_EXECUTE_STACK
 
 /************************[  Assembler stuff  ]********************************/
 

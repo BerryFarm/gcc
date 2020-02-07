@@ -1,121 +1,107 @@
-2012-03-01  Release Manager
+2014-07-16  Release Manager
 
-	* GCC 4.6.3 released.
+	* GCC 4.9.1 released.
 
-2012-02-03  Kai Tietz  <ktietz@redhat.com>
+2014-04-22  Release Manager
 
-	PR libjava/48512
-	* configure.ac (THREADSTARTFILESPEC): Don't add crtmet.o file for
-	w64 windows targets.
-	* configure: Regenerated.
+	* GCC 4.9.0 released.
 
-2011-11-24  Jakub Jelinek  <jakub@redhat.com>
+2014-03-12  Uros Bizjak  <ubizjak@gmail.com>
 
-	PR bootstrap/50888
-	* prims.cc: Don't include ctype.h.
-	(c_isspace): Define.
-	(next_property_key, next_property_value): Use it instead
-	of isspace.
+	* include/dwarf2-signal.h: Update copyright year.
+	(SIGNAL_HANDLER): Remove _sip argument.  Mark _p argument with
+	__attribute__ ((__unused__)).
+	(class java::lang::Throwable): Remove declaration.
+	(MAKE_THROW_FRAME) [!__ia64__]: Define as empty definition.
 
-2011-11-20  Andreas Tobler  <andreast@fgznet.ch>
+2014-03-11  Uros Bizjak  <ubizjak@gmail.com>
 
-	* configure.ac: Fix FreeBSD 10 detection.
+	* java/lang/natObject.cc (_Jv_MonitorEnter): Add missing parenthesis
+	around comparison with (address | LOCKED) in JvAssert.
+
+2014-02-20  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	PR libgcj/55637
+	* testsuite/libjava.lang/sourcelocation.xfail: New file.
+
+2014-02-18  Richard Biener  <rguenther@suse.de>
+
+	PR libjava/60261
+	* configure.ac (dbexecdir): Remove redundant multilib addition.
+	* Makefile.am (gcc_version): Export.
 	* configure: Regenerate.
+	* Makefile.in: Likewise.
 
-2011-10-26  Release Manager
+2014-01-02  Tobias Burnus  <burnus@net-b.de>
 
-	* GCC 4.6.2 released.
+	* gnu/gcj/convert/Convert.java (version): Update copyright notice
+	dates.
+	* gnu/gcj/tools/gcj_dbtool/Main.java (main): Ditto.
 
-2011-10-18  Uros Bizjak  <ubizjak@gmail.com>
-	    Eric Botcazou  <ebotcazou@adacore.com>
+2013-12-09  Andreas Schwab  <schwab@suse.de>
 
-	PR target/50737
-	* include/dwarf2-signal.h [__alpha__]: Remove MAKE_THROW_FRAME
-	definition.
-
-2011-07-12  Andrew Haley  <aph@redhat.com>
-
-	* java/lang/natClass.cc (finalize): Make sure that the class
-	really has an engine.
-
-2011-06-27  Release Manager
-
-	* GCC 4.6.1 released.
-
-2011-06-19  Jack Howarth <howarth@bromo.med.uc.edu>
-
-	PR target/49461
-	* libjava/configure.ac (SYSTEMSPEC): Pass -no_pie for darwin11.
-	* libjava/configure: Regenerate.
-
-2011-04-15  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
-
-	* testsuite/libjava.jni/jni.exp (gcj_jni_get_cxxflags_invocation):
-	Add $libiconv to cxxflags for alpha*-dec-osf*.
-
-2011-03-28  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
-
-	Backport from mainline:
-	2011-03-21  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
-
-	PR bootstrap/48135
-	* configure.ac (libjava_cv_anon_version_script): Handle
-	--disable-symvers.
-	* configure: Regenerate.
-
-2011-03-25  Release Manager
-
-	* GCC 4.6.0 released.
-
-2011-02-14  Gary Benson  <gbenson@redhat.com>
-
-	* libjava/contrib/aot-compile.in: Add our module directory
-	to the start of the search path rather than the end.
-	* libjava/contrib/aot-compile-rpm.in: Likewise.
-
-2011-02-14  Gary Benson  <gbenson@redhat.com>
-
-	PR libjava/47484
-	* configure.ac (python_mod_dir, python_mod_dir_expanded):
-	Install Python modules into versioned directory.
-	* configure: Regenerate.
-
-2011-02-13  Ralf Wildenhues  <Ralf.Wildenhues@gmx.de>
-
-	* configure: Regenerate.
-	* shlibpath.m4 (AC_LIBTOOL_SYS_DYNAMIC_LINKER): Remove handling
-	of freebsd1* which soon would incorrectly match FreeBSD 10.0.
-
-2011-02-04  Ralf Wildenhues  <Ralf.Wildenhues@gmx.de>
-
-	PR java/21206
-	* configure.ac (LDLIBICONV): New substituted variable, with
-	instances of '-Wl,' removed from LIBICONV.
-	* configure: Regenerate.
-	* libgcj.spec.in: Use @LDLIBICONV@ not @LIBICONV@.
+	* Makefile.am (toolexeclib_LTLIBRARIES) [USE_LIBGCJ_BC]: Use
+	install/libgcj_bc.la instead of libgcj_bc.la.
+	(noinst_LTLIBRARIES) [USE_LIBGCJ_BC]: Define.
+	(install_libgcj_bc_la_SOURCES): Define.
+	(install/libgcj_bc.la): New rule.
 	* Makefile.in: Regenerate.
-	* gcj/Makefile.in: Likewise.
-	* include/Makefile.in: Likewise.
-	* testsuite/Makefile.in: Likewise.
 
-2011-02-02  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+2013-09-20  Alan Modra  <amodra@gmail.com>
 
-	* configure.ac: Don't use libdl on mips-sgi-irix6*.
 	* configure: Regenerate.
 
-2011-01-06  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+2013-06-20  Roland Lutz  <rlutz@hedmen.org>
 
-	* testsuite/libjava.jni/jni.exp (gcj_jni_get_cxxflags_invocation):
-	Add -shared-libgcc to cxxflags for *-*-solaris*.
-	Remove -lsocket.
+ 	* contrib/aot-compile.in: Fix typo in option list.
 
-2011-01-03  Jakub Jelinek  <jakub@redhat.com>
+2013-06-20  Matthias Klose  <doko@ubuntu.com>
+
+	* pkg.m4 (PKG_CHECK_MODULES): Use AC_PATH_TOOL to check for pkg-config.
+	* classpath/m4/pkg.m4 (PKG_CHECK_MODULES): Likewise.
+	* configure: Regenerate.
+	* classpath/configure: Regenerate.
+
+2013-06-20  Matthias Klose  <doko@ubuntu.com>
+
+	* libtool-version: Bump soversion.
+
+2013-05-22  Mark Mitchell  <mark@codesourcery.com>
+	    Sandra Loosemore  <sandra@codesourcery.com>
+
+	* configure.ac (dbexecdir): Base on $(toolexeclibdir), not
+	$(libdir).
+	* Makefile.am (pkgconfigdir): Likewise.
+	* configure: Regenerated.
+	* Makefile.in: Regenerated.
+	* gcj/Makefile.in: Regenerated.
+	* include/Makefile.in: Regenerated.
+	* testsuite/Makefile.in: Regenerated.
+
+2013-04-16  Andreas Schwab  <schwab@suse.de>
+
+	* configure.host: Add support for aarch64.
+	* sysdep/aarch64/locks.h: New file.
+
+2013-03-12  Andrew John Hughes  <gnu.andrew@redhat.com>
+
+	* include/posix-threads.h:
+	(_Jv_MutexCheckMonitor(_Jv_Mutex_t)): Use
+	pthread_equal rather than !=.
+
+2013-01-07  H.J. Lu  <hongjiu.lu@intel.com>
+
+	* Makefile.am (lib_gnu_awt_xlib_la_LDFLAGS): Replace
+	LIBSTDCXX_RAW_CXX_LDLAGS with LIBSTDCXX_RAW_CXX_LDFLAGS.
+	* Makefile.in: Regenerated.
+
+2013-01-03  Jakub Jelinek  <jakub@redhat.com>
 
 	* gnu/gcj/convert/Convert.java (version): Update copyright notice
 	dates.
 	* gnu/gcj/tools/gcj_dbtool/Main.java (main): Likewise.
 
-Copyright (C) 2011 Free Software Foundation, Inc.
+Copyright (C) 2014 Free Software Foundation, Inc.
 
 Copying and distribution of this file, with or without modification,
 are permitted in any medium without royalty provided the copyright

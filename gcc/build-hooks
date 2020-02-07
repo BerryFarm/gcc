@@ -3,19 +3,24 @@ targ_root=${PWD}
 
 gcc_version=$(cat ../gcc/BASE-VER)
 
-qnx_target_version=6.5.0
+qnx_target=qnx800
+qnx_target_version=8.0.0
 nto_target=${PWD##*-}
 host_target=${PWD##*/}
 cpu_string=`echo ${nto_target} | sed 's/nto//'`
 
 case ${cpu_string} in
-	x86)		targetarch=i486;;
-	armeabi) 	targetarch=arm
+	x86)		targetarch=i486 ;;
+	armeabi*)	targetarch=arm
 			nto_target=ntoarm
 			os_variant=eabi
-		;;
-esac 
-	
+			case ${cpu_string} in
+				armeabihf) os_variant=${os_variant}hf ;;
+			esac
+			;;
+	*)		targetarch=${cpu_string} ;;
+esac
+
 tmpstring=`echo ${targetarch}-nto-qnx${qnx_target_version}${os_variant}`
 target=`${srcdir}/config.sub ${tmpstring}`
 basedir='/usr'
@@ -37,52 +42,44 @@ function hook_preconfigure {
 	case ${SYSNAME} in
 	nto)
 		case "${target}" in
-		*nto-qnx*)	TOOL_PATH=${TOOL_PATH:-${QNX_HOST:-/usr/qnx650/host/qnx6/x86}}
+		*nto-qnx*)	TOOL_PATH=${TOOL_PATH:-${QNX_HOST:-/usr/${qnx_target}/host/qnx6/x86}}
 				basedir=${TOOL_PATH}/usr ;;
-		*)		basedir=/usr/qnx650/host/qnx6/x86/usr ;;
+		*)		basedir=/usr/${qnx_target}/host/qnx6/x86/usr ;;
 		esac
-		;;
-	solaris)
-		host_cpu=$(uname -p)
-		case ${host_cpu} in
-        i[34567]86) host_cpu=x86;;
-		esac
-		basedir=${QNX_HOST:-/usr/qnx650/host/solaris/${host_cpu}/usr}
 		;;
 	darwin)
 		host_cpu=x86
 		basedir=${QNX_HOST}/usr
-		#configure_opts="${configure_opts} -disable-shared --disable-multilib"
-		#configure_opts="${configure_opts} --disable-multilib --with-gmp=${QNX_HOST}/usr --with-mpfr=${QNX_HOST}/usr --program-suffix=${gcc_version}"
-		configure_opts="${configure_opts} --disable-multilib --with-gmp=${QNX_HOST}/usr --with-mpfr=${QNX_HOST}/usr"
-		#qnxtarget=${QNX_TARGET}
 		;;
 	linux)
 		configure_opts="${configure_opts} --build=i686-pc-linux-gnu"
 		case "${host_target}" in
 			win32-*) 	
-			configure_opts="${configure_opts} --host=i386-mingw32msvc"
-			basedir=/c/qnx650/host/win32/x86/usr
-			qnxtarget=/c/qnx650/target/qnx6/
+			basedir=/c/${qnx_target}/host/win32/x86/usr
+			qnxtarget=/c/${qnx_target}/target/qnx6/
 			;;
 			nto-*)
-			configure_opts="${configure_opts} --host=i486-pc-nto-qnx6.5.0"
-			basedir=/usr/qnx650/host/qnx6/x86/usr
-			qnxtarget=/usr/qnx650/target/qnx6
-				
+			CPPFLAGS=
+			basedir=/usr/${qnx_target}/host/qnx6/x86/usr
+			qnxtarget=/usr/${qnx_target}/target/qnx6
+			configure_opts="${configure_opts} --disable-plugin"
+			;;
+			darwin-*)
+			basedir=/Developer/SDKs/${qnx_target}/host/darwin/x86/usr
+			qnxtarget=/Developer/SDKs/${qnx_target}/target/qnx6
+			configure_opts="${configure_opts} --disable-plugin"
 			;;
 			linux-*)
 				host_cpu=$(uname -m)
 				case ${host_cpu} in
-			i[34567]86) host_cpu=x86 ;;
+					i[34567]86) host_cpu=x86 ;;
 				esac
-				basedir=/opt/qnx650/host/linux/x86/usr
-				qnxtarget=/opt/qnx650/target/qnx6
-			
+				basedir=/opt/${qnx_target}/host/linux/x86/usr
+				qnxtarget=/opt/${qnx_target}/target/qnx6
 			;;
 		esac ;;
 	win32)
-		tooldir=${QNX_HOST:-c:/qnx650/host/win32/x86}
+		tooldir=${QNX_HOST:-c:/${qnx_target}/host/win32/x86}
 		basedir=${tooldir}/usr
 		;;
 	*)
@@ -94,8 +91,8 @@ function hook_preconfigure {
 	case ${target} in
 	*nto-qnx*)	
 		configure_opts="${configure_opts} --enable-cheaders=c"
-		configure_opts="${configure_opts} --with-as=${nto_target}-as"
-		configure_opts="${configure_opts} --with-ld=${nto_target}-ld"
+		configure_opts="${configure_opts} --with-as=${target}-as"
+		configure_opts="${configure_opts} --with-ld=${target}-ld"
 	esac 
 
 	configure_opts="${configure_opts} --with-sysroot=$QNX_TARGET/"
@@ -103,7 +100,6 @@ function hook_preconfigure {
  	configure_opts="${configure_opts} --libdir=${basedir}/lib"
 	configure_opts="${configure_opts} --libexecdir=${basedir}/lib"
 	configure_opts="${configure_opts} --target=${target}"
-	configure_opts="${configure_opts} --srcdir=${srcdir}"
 	configure_opts="${configure_opts} --prefix=${basedir}"
 	configure_opts="${configure_opts} --exec-prefix=${basedir}"
 	configure_opts="${configure_opts} --with-local-prefix=${basedir}"
@@ -111,6 +107,7 @@ function hook_preconfigure {
 	configure_opts="${configure_opts} --enable-threads=posix"
 	configure_opts="${configure_opts} --disable-nls"
 	configure_opts="${configure_opts} --disable-tls"
+	configure_opts="${configure_opts} --disable-libssp"
 	configure_opts="${configure_opts} --disable-libstdcxx-pch"
 	configure_opts="${configure_opts} --enable-libmudflap"
 	configure_opts="${configure_opts} --enable-libgomp"
@@ -120,6 +117,7 @@ function hook_preconfigure {
 	configure_opts="${configure_opts} --enable-multilib"
 	configure_opts="${configure_opts} --with-bugurl=http://www.qnx.com"
 	configure_opts="${configure_opts} --enable-gnu-indirect-function"
+	configure_opts="${configure_opts} --enable-stack-protector"
 
 	case ${cpu_string} in
 		mips*)
@@ -127,14 +125,20 @@ function hook_preconfigure {
 			configure_opts="${configure_opts} --disable-fixed-point"
 			;;
 		armeabi)
-			configure_opts="${configure_opts} --with-arch=armv7-a"
 			configure_opts="${configure_opts} --with-float=softfp"
+			configure_opts="${configure_opts} --with-arch=armv7-a"
 			configure_opts="${configure_opts} --with-fpu=vfpv3-d16"
 			configure_opts="${configure_opts} --with-mode=thumb"
 			;;
+		armeabihf)
+			configure_opts="${configure_opts} --with-float=hard"
+			configure_opts="${configure_opts} --with-arch=armv7-a"
+			configure_opts="${configure_opts} --with-fpu=vfpv3"
+			configure_opts="${configure_opts} --with-mode=thumb"
+			;;
 		*)	;;
-	esac 
-	
+	esac
+
 	# The cross compilation of libgcc.a and libstdc++ require system headers
 	# from the next version of Neutrino while gcc itself should be compiled
 	# against the currently released version. This symlink puts the system

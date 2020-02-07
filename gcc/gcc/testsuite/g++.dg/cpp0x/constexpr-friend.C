@@ -1,5 +1,5 @@
 // PR c++/48948
-// { dg-options -std=c++0x }
+// { dg-do compile { target c++11 } }
 
 struct A { A(); };
 
@@ -19,5 +19,5 @@ struct C
 
 constexpr int i = f(C<int>());
 constexpr int j = C<int>().m(C<int>());
-constexpr int k = C<double>().m(A()); // { dg-error "not a constexpr function" }
-constexpr int l = g(C<double>(),A()); // { dg-error "not a constexpr function" }
+constexpr int k = C<double>().m(A()); // { dg-error "constexpr" }
+constexpr int l = g(C<double>(),A()); // { dg-error "constexpr" }

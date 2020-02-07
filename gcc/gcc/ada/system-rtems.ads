@@ -7,7 +7,7 @@
 --                                 S p e c                                  --
 --                            (Compiler Version)                            --
 --                                                                          --
---          Copyright (C) 1992-2009 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2014 Free Software Foundation, Inc.          --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -34,9 +34,8 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  This version of System is a RTEMS version that is used in building
---  the compiler.  This is based as closely as possible on the generic
---  version with the following exceptions:
+--  This version is for RTEMS.  It is based as closely as possible on the
+--  generic version with the following exceptions:
 --      + priority definitions
 
 package System is
@@ -67,6 +66,7 @@ package System is
    --  Storage-related Declarations
 
    type Address is private;
+   pragma Preelaborable_Initialization (Address);
    Null_Address : constant Address;
 
    Storage_Unit : constant := Standard'Storage_Unit;
@@ -159,6 +159,5 @@ private
    Suppress_Standard_Library : constant Boolean := False;
    Use_Ada_Main_Program_Name : constant Boolean := False;
    ZCX_By_Default            : constant Boolean := False;
-   GCC_ZCX_Support           : constant Boolean := True;
 
 end System;

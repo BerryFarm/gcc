@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2010, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -206,6 +206,11 @@ package body Exception_Data is
    pragma Export
      (Ada, Exception_Message_Length, "__gnat_exception_msg_len");
 
+   function Get_Executable_Load_Address return System.Address;
+   pragma Import (C, Get_Executable_Load_Address,
+                  "__gnat_get_executable_load_address");
+   --  Get the load address of the executable, or Null_Address if not known
+
    -------------------------
    -- Append_Info_Address --
    -------------------------
@@ -220,7 +225,7 @@ package body Exception_Data is
       N : Integer_Address;
 
       H : constant array (Integer range 0 .. 15) of Character :=
-                                                         "0123456789abcdef";
+        "0123456789abcdef";
    begin
       P := S'Last;
       N := To_Integer (A);
@@ -377,17 +382,31 @@ package body Exception_Data is
    --  As for Basic_Exception_Information:
 
    BETB_Header : constant String := "Call stack traceback locations:";
+   LDAD_Header : constant String := "Load address: ";
 
    procedure Append_Info_Basic_Exception_Traceback
      (X    : Exception_Occurrence;
       Info : in out String;
       Ptr  : in out Natural)
    is
+      Load_Address : Address;
+
    begin
       if X.Num_Tracebacks = 0 then
          return;
       end if;
 
+      --  The executable load address line
+
+      Load_Address := Get_Executable_Load_Address;
+
+      if Load_Address /= Null_Address then
+         Append_Info_String (LDAD_Header, Info, Ptr);
+         Append_Info_Address (Load_Address, Info, Ptr);
+         Append_Info_NL (Info, Ptr);
+      end if;
+
+      --  The traceback lines
       Append_Info_String (BETB_Header, Info, Ptr);
       Append_Info_NL (Info, Ptr);
 
@@ -407,11 +426,12 @@ package body Exception_Data is
    function Basic_Exception_Tback_Maxlength
      (X : Exception_Occurrence) return Natural
    is
-      Space_Per_Traceback : constant := 2 + 16 + 1;
+      Space_Per_Address : constant := 2 + 16 + 1;
       --  Space for "0x" + HHHHHHHHHHHHHHHH + " "
    begin
-      return BETB_Header'Length + 1 +
-               X.Num_Tracebacks * Space_Per_Traceback + 1;
+      return
+        LDAD_Header'Length + Space_Per_Address + BETB_Header'Length + 1 +
+          X.Num_Tracebacks * Space_Per_Address + 1;
    end Basic_Exception_Tback_Maxlength;
 
    ---------------------------------------
@@ -433,7 +453,8 @@ package body Exception_Data is
    ------------------------------
 
    function Exception_Info_Maxlength
-     (X : Exception_Occurrence) return Natural is
+     (X : Exception_Occurrence) return Natural
+   is
    begin
       return
         Basic_Exception_Info_Maxlength (X)
@@ -447,14 +468,15 @@ package body Exception_Data is
    procedure Append_Info_Exception_Message
      (X    : Exception_Occurrence;
       Info : in out String;
-      Ptr  : in out Natural) is
+      Ptr  : in out Natural)
+   is
    begin
       if X.Id = Null_Id then
          raise Constraint_Error;
       end if;
 
       declare
-         Len : constant Natural := Exception_Message_Length (X);
+         Len : constant Natural           := Exception_Message_Length (X);
          Msg : constant String (1 .. Len) := X.Msg (1 .. Len);
       begin
          Append_Info_String (Msg, Info, Ptr);
@@ -476,7 +498,7 @@ package body Exception_Data is
       end if;
 
       declare
-         Len  : constant Natural := Exception_Name_Length (Id);
+         Len  : constant Natural           := Exception_Name_Length (Id);
          Name : constant String (1 .. Len) := To_Ptr (Id.Full_Name) (1 .. Len);
       begin
          Append_Info_String (Name, Info, Ptr);
@@ -497,7 +519,8 @@ package body Exception_Data is
    ---------------------------
 
    function Exception_Name_Length
-     (Id : Exception_Id) return Natural is
+     (Id : Exception_Id) return Natural
+   is
    begin
       --  What is stored in the internal Name buffer includes a terminating
       --  null character that we never care about.
@@ -516,7 +539,8 @@ package body Exception_Data is
    ------------------------------
 
    function Exception_Message_Length
-     (X : Exception_Occurrence) return Natural is
+     (X : Exception_Occurrence) return Natural
+   is
    begin
       return X.Msg_Length;
    end Exception_Message_Length;
@@ -530,7 +554,6 @@ package body Exception_Data is
    is
       Info : aliased String (1 .. Basic_Exception_Tback_Maxlength (X));
       Ptr  : Natural := Info'First - 1;
-
    begin
       Append_Info_Basic_Exception_Traceback (X, Info, Ptr);
       return Info (Info'First .. Ptr);
@@ -545,7 +568,6 @@ package body Exception_Data is
    is
       Info : String (1 .. Exception_Info_Maxlength (X));
       Ptr  : Natural := Info'First - 1;
-
    begin
       Append_Info_Exception_Information (X, Info, Ptr);
       return Info (Info'First .. Ptr);
@@ -556,13 +578,13 @@ package body Exception_Data is
    -------------------------
 
    procedure Set_Exception_C_Msg
-     (Id     : Exception_Id;
+     (Excep  : EOA;
+      Id     : Exception_Id;
       Msg1   : System.Address;
       Line   : Integer        := 0;
       Column : Integer        := 0;
       Msg2   : System.Address := System.Null_Address)
    is
-      Excep  : constant EOA := Get_Current_Excep.all;
       Remind : Integer;
       Ptr    : Natural;
 
@@ -596,9 +618,9 @@ package body Exception_Data is
          if Excep.Msg_Length <= Exception_Msg_Max_Length - Size then
             Excep.Msg (Excep.Msg_Length + 1) := ':';
             Excep.Msg_Length := Excep.Msg_Length + Size;
+
             Val := Number;
             Size := 0;
-
             while Val > 0 loop
                Remind := Val rem 10;
                Val := Val / 10;
@@ -612,13 +634,11 @@ package body Exception_Data is
    --  Start of processing for Set_Exception_C_Msg
 
    begin
-      Exception_Propagation.Setup_Exception (Excep, Excep);
       Excep.Exception_Raised := False;
       Excep.Id               := Id;
       Excep.Num_Tracebacks   := 0;
       Excep.Pid              := Local_Partition_ID;
       Excep.Msg_Length       := 0;
-      Excep.Cleanup_Flag     := False;
 
       while To_Ptr (Msg1) (Excep.Msg_Length + 1) /= ASCII.NUL
         and then Excep.Msg_Length < Exception_Msg_Max_Length
@@ -654,24 +674,20 @@ package body Exception_Data is
    -----------------------
 
    procedure Set_Exception_Msg
-     (Id      : Exception_Id;
+     (Excep   : EOA;
+      Id      : Exception_Id;
       Message : String)
    is
       Len   : constant Natural :=
-                Natural'Min (Message'Length, Exception_Msg_Max_Length);
+        Natural'Min (Message'Length, Exception_Msg_Max_Length);
       First : constant Integer := Message'First;
-      Excep  : constant EOA := Get_Current_Excep.all;
-
    begin
-      Exception_Propagation.Setup_Exception (Excep, Excep);
       Excep.Exception_Raised := False;
       Excep.Msg_Length       := Len;
       Excep.Msg (1 .. Len)   := Message (First .. First + Len - 1);
       Excep.Id               := Id;
       Excep.Num_Tracebacks   := 0;
       Excep.Pid              := Local_Partition_ID;
-      Excep.Cleanup_Flag     := False;
-
    end Set_Exception_Msg;
 
    ----------------------------------
@@ -693,7 +709,7 @@ package body Exception_Data is
       --  call become inoffensive.
 
       Wrapper : constant Traceback_Decorator_Wrapper_Call :=
-                  Traceback_Decorator_Wrapper;
+        Traceback_Decorator_Wrapper;
 
    begin
       if Wrapper = null then

@@ -1,11 +1,13 @@
 /* tprintf.c -- test file for mpfr_printf and mpfr_vprintf
 
-Copyright 2008, 2009 Free Software Foundation, Inc.
-Contributed by the Arenaire and Cacao projects, INRIA.
+Copyright 2008-2017 Free Software Foundation, Inc.
+Contributed by the AriC and Caramba projects, INRIA.
+
+This file is part of the GNU MPFR Library.
 
 The GNU MPFR Library is free software; you can redistribute it and/or modify
 it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or (at your
+the Free Software Foundation; either version 3 of the License, or (at your
 option) any later version.
 
 The GNU MPFR Library is distributed in the hope that it will be useful, but
@@ -14,25 +16,19 @@ or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public
 License for more details.
 
 You should have received a copy of the GNU Lesser General Public License
-along with the GNU MPFR Library; see the file COPYING.LIB.  If not, write to
-the Free Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
-MA 02110-1301, USA. */
+along with the GNU MPFR Library; see the file COPYING.LESSER.  If not, see
+http://www.gnu.org/licenses/ or write to the Free Software Foundation, Inc.,
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA. */
 
-#if defined HAVE_STDARG
+#if HAVE_STDARG
 #include <stdarg.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
+#include <errno.h>
 
-#if HAVE_INTTYPES_H
-# include <inttypes.h> /* for intmax_t */
-#else
-# if HAVE_STDINT_H
-#  include <stdint.h>
-# endif
-#endif
-
+#include "mpfr-intmax.h"
 #include "mpfr-test.h"
 #define STDOUT_FILENO 1
 
@@ -67,7 +63,7 @@ const int prec_max_printf = 5000;
 int stdout_redirect;
 
 static void
-check (char *fmt, mpfr_t x)
+check (const char *fmt, mpfr_t x)
 {
   if (mpfr_printf (fmt, x) == -1)
     {
@@ -79,7 +75,7 @@ check (char *fmt, mpfr_t x)
 }
 
 static void
-check_vprintf (char *fmt, ...)
+check_vprintf (const char *fmt, ...)
 {
   va_list ap;
 
@@ -96,7 +92,7 @@ check_vprintf (char *fmt, ...)
 }
 
 static void
-check_vprintf_failure (char *fmt, ...)
+check_vprintf_failure (const char *fmt, ...)
 {
   va_list ap;
 
@@ -111,6 +107,33 @@ check_vprintf_failure (char *fmt, ...)
     }
   putchar ('\n');
   va_end (ap);
+}
+
+static void
+check_vprintf_overflow (const char *fmt, ...)
+{
+  va_list ap;
+  int r, e;
+
+  va_start (ap, fmt);
+  errno = 0;
+  r = mpfr_vprintf (fmt, ap);
+  e = errno;
+  va_end (ap);
+
+  if (r != -1
+#ifdef EOVERFLOW
+      || e != EOVERFLOW
+#endif
+      )
+    {
+      putchar ('\n');
+      fprintf (stderr, "Error in mpfr_vprintf(\"%s\", ...)\n"
+               "Got r = %d, errno = %d\n", fmt, r, e);
+      exit (1);
+    }
+
+  putchar ('\n');
 }
 
 static void
@@ -169,11 +192,11 @@ check_long_string (void)
 
   mpfr_init2 (x, INT_MAX);
 
-  mpfr_set_ui (x, 1, GMP_RNDN);
+  mpfr_set_ui (x, 1, MPFR_RNDN);
   mpfr_nextabove (x);
 
-  check_vprintf_failure ("%Rb", x);
-  check_vprintf_failure ("%RA %RA %Ra %Ra", x, x, x, x);
+  check_vprintf_overflow ("%Rb", x);
+  check_vprintf_overflow ("%RA %RA %Ra %Ra", x, x, x, x);
 
   mpfr_clear (x);
 }
@@ -228,8 +251,10 @@ static void
 check_mixed (void)
 {
   int ch = 'a';
+#ifndef NPRINTF_HH
   signed char sch = -1;
   unsigned char uch = 1;
+#endif
   short sh = -1;
   unsigned short ush = 1;
   int i = -1;
@@ -239,15 +264,19 @@ check_mixed (void)
   unsigned long ulo = 1;
   float f = -1.25;
   double d = -1.25;
+#if !defined(NPRINTF_T) || !defined(NPRINTF_L)
   long double ld = -1.25;
+#endif
 
-  ptrdiff_t p = 1;
+#ifndef NPRINTF_T
+  ptrdiff_t p = 1, saved_p;
+#endif
   size_t sz = 1;
 
   mpz_t mpz;
   mpq_t mpq;
   mpf_t mpf;
-  mp_rnd_t rnd = GMP_RNDN;
+  mpfr_rnd_t rnd = MPFR_RNDN;
 
   mpfr_t mpfr;
   mpfr_prec_t prec;
@@ -259,7 +288,7 @@ check_mixed (void)
   mpf_init (mpf);
   mpf_set_q (mpf, mpq);
   mpfr_init (mpfr);
-  mpfr_set_f (mpfr, mpf, GMP_RNDN);
+  mpfr_set_f (mpfr, mpf, MPFR_RNDN);
   prec = mpfr_get_prec (mpfr);
 
   check_vprintf ("a. %Ra, b. %u, c. %lx%n", mpfr, ui, ulo, &j);
@@ -279,8 +308,11 @@ check_mixed (void)
   check_length_with_cmp (7, mpfr, 15, mpfr_cmp_ui (mpfr, 15), Rg);
 
 #ifndef NPRINTF_T
+  saved_p = p;
   check_vprintf ("%% a. %RNg, b. %Qx, c. %td%tn", mpfr, mpq, p, &p);
-  check_length (8, (long) p, 20, ld);  /* no format specifier '%td' in C89 */
+  if (p != 20)
+    mpfr_fprintf (stderr, "Error in test 8, got '%% a. %RNg, b. %Qx, c. %td'\n", mpfr, mpq, saved_p);
+  check_length (8, (long) p, 20, ld); /* no format specifier '%td' in C89 */
 #endif
 
 #ifndef NPRINTF_L
@@ -290,7 +322,7 @@ check_mixed (void)
 
 #ifndef NPRINTF_HH
   check_vprintf ("a. %hhi, b. %Ra, c. %hhu%hhn", sch, mpfr, uch, &uch);
-  check_length (10, (unsigned int) uch, 22, u);  /* no format specifier '%hhu' in C89 */
+  check_length (10, (unsigned int) uch, 22, u); /* no format specifier '%hhu' in C89 */
 #endif
 
 #if defined(HAVE_LONG_LONG) && !defined(NPRINTF_LL)
@@ -328,7 +360,7 @@ check_random (int nb_tests)
 {
   int i;
   mpfr_t x;
-  mp_rnd_t rnd;
+  mpfr_rnd_t rnd;
   char flag[] =
     {
       '-',
@@ -346,7 +378,7 @@ check_random (int nb_tests)
       'f',
       'g'
     };
-  mp_exp_t old_emin, old_emax;
+  mpfr_exp_t old_emin, old_emax;
 
   old_emin = mpfr_get_emin ();
   old_emax = mpfr_get_emax ();
@@ -362,8 +394,8 @@ check_random (int nb_tests)
       char fmt[FMT_SIZE]; /* at most something like "%-+ #0'.*R*f" */
       char *ptr = fmt;
 
-      tests_default_random (x, 256, MPFR_EMIN_MIN, MPFR_EMAX_MAX);
-      rnd = (mp_rnd_t) RND_RAND ();
+      tests_default_random (x, 256, MPFR_EMIN_MIN, MPFR_EMAX_MAX, 0);
+      rnd = (mpfr_rnd_t) RND_RAND ();
 
       spec = (int) (randlimb () % 5);
       jmax = (spec == 3 || spec == 4) ? 6 : 5; /* ' flag only with %f or %g */
@@ -443,7 +475,7 @@ main (int argc, char *argv[])
       if (freopen ("/dev/null", "w", stdout) == NULL)
         {
           /* We failed to open this device, try with a dummy file */
-          if (freopen ("mpfrtest.txt", "w", stdout) == NULL)
+          if (freopen ("tprintf_out.txt", "w", stdout) == NULL)
             {
               /* Output the error message to stderr since it is not
                  a message about a wrong result in MPFR. Anyway the
@@ -495,7 +527,7 @@ int
 main (void)
 {
   /* We have nothing to test. */
-  return 0;
+  return 77;
 }
 
 #endif  /* HAVE_STDARG */

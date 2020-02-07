@@ -1,5 +1,5 @@
 // PR c++/48745
-// { dg-options -std=c++0x }
+// { dg-do compile { target c++11 } }
 
 template<class T>
 struct add_rval_ref {
@@ -20,4 +20,4 @@ decltype(T{create<Args>()...}, char()) f(int);
 template<class, class...>
 char (&f(...))[2];
 
-static_assert(sizeof(f<int, void>(0)) != 1, "Error"); // { dg-bogus "void value" "" { xfail *-*-* } }
+static_assert(sizeof(f<int, void>(0)) != 1, "Error"); // #

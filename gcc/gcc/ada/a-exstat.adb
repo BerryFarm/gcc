@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2009, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -32,7 +32,7 @@
 pragma Warnings (Off);
 --  Allow withing of non-Preelaborated units in Ada 2005 mode where this
 --  package will be categorized as Preelaborate. See AI-362 for details.
---  It is safe in the context of the run-time to violate the rules!
+--  It is safe in the context of the run-time to violate the rules.
 
 with System.Exception_Table;  use System.Exception_Table;
 with System.Storage_Elements; use System.Storage_Elements;
@@ -144,8 +144,6 @@ package body Stream_Attributes is
          return Null_Occurrence;
 
       else
-         X.Cleanup_Flag := False;
-
          To := S'First - 2;
          Next_String;
 

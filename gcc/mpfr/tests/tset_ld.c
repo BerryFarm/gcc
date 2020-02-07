@@ -1,13 +1,13 @@
 /* Test file for mpfr_set_ld and mpfr_get_ld.
 
-Copyright 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009 Free Software Foundation, Inc.
-Contributed by the Arenaire and Cacao projects, INRIA.
+Copyright 2002-2017 Free Software Foundation, Inc.
+Contributed by the AriC and Caramba projects, INRIA.
 
 This file is part of the GNU MPFR Library.
 
 The GNU MPFR Library is free software; you can redistribute it and/or modify
 it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or (at your
+the Free Software Foundation; either version 3 of the License, or (at your
 option) any later version.
 
 The GNU MPFR Library is distributed in the hope that it will be useful, but
@@ -16,9 +16,9 @@ or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public
 License for more details.
 
 You should have received a copy of the GNU Lesser General Public License
-along with the GNU MPFR Library; see the file COPYING.LIB.  If not, write to
-the Free Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
-MA 02110-1301, USA. */
+along with the GNU MPFR Library; see the file COPYING.LESSER.  If not, see
+http://www.gnu.org/licenses/ or write to the Free Software Foundation, Inc.,
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA. */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,17 +39,19 @@ check_gcc33_bug (void)
     return;  /* OK */
   printf
     ("Detected optimization bug of gcc 3.3 on Alpha concerning long double\n"
-     "comparisons; set_ld tests are disabled (set_ld won't work correctly).\n"
+     "comparisons; set_ld tests might fail (set_ld won't work correctly).\n"
      "See http://gcc.gnu.org/ml/gcc-bugs/2003-10/msg00853.html for more\n"
-     "information on this bug.\n");
-  exit (0);  /* This is not a bug in MPFR, so don't fail. */
+     "information.\n");
 }
 
 static int
 Isnan_ld (long double d)
 {
-  double e = (double) d;
-  if (DOUBLE_ISNAN (e))
+  /* Do not convert d to double as this can give an overflow, which
+     may confuse compilers without IEEE 754 support (such as clang
+     -fsanitize=undefined), or trigger a trap if enabled.
+     The DOUBLE_ISNAN macro should work fine on long double. */
+  if (DOUBLE_ISNAN (d))
     return 1;
   LONGDOUBLE_NAN_ACTION (d, goto yes);
   return 0;
@@ -68,18 +70,24 @@ check_set_get (long double d, mpfr_t x)
   long double e;
   int inex;
 
-  for (r = 0; r < GMP_RND_MAX; r++)
+  for (r = 0; r < MPFR_RND_MAX; r++)
     {
-      inex = mpfr_set_ld (x, d, (mp_rnd_t) r);
+      inex = mpfr_set_ld (x, d, (mpfr_rnd_t) r);
       if (inex != 0)
         {
+          mpfr_exp_t emin, emax;
+          emin = mpfr_get_emin ();
+          emax = mpfr_get_emax ();
           printf ("Error: mpfr_set_ld should be exact\n");
           printf ("d=%1.30Le inex=%d\n", d, inex);
-          printf ("emin=%ld emax=%ld\n", mpfr_get_emin (), mpfr_get_emax ());
+          if (emin >= LONG_MIN)
+            printf ("emin=%ld\n", (long) emin);
+          if (emax <= LONG_MAX)
+            printf ("emax=%ld\n", (long) emax);
           mpfr_dump (x);
           exit (1);
         }
-      e = mpfr_get_ld (x, (mp_rnd_t) r);
+      e = mpfr_get_ld (x, (mpfr_rnd_t) r);
       if ((Isnan_ld(d) && ! Isnan_ld(e)) ||
           (Isnan_ld(e) && ! Isnan_ld(d)) ||
           (e != d && !(Isnan_ld(e) && Isnan_ld(d))))
@@ -88,7 +96,7 @@ check_set_get (long double d, mpfr_t x)
           printf ("  r=%d\n", r);
           printf ("  d=%1.30Le get_ld(set_ld(d))=%1.30Le\n", d, e);
           ld_trace ("  d", d);
-          printf ("  x="); mpfr_out_str (NULL, 16, 0, x, GMP_RNDN);
+          printf ("  x="); mpfr_out_str (NULL, 16, 0, x, MPFR_RNDN);
           printf ("\n");
           ld_trace ("  e", e);
 #ifdef MPFR_NANISNAN
@@ -113,28 +121,28 @@ test_small (void)
   mpfr_init2 (z, 64);
 
   /* x = 11906603631607553907/2^(16381+64) */
-  mpfr_set_str (x, "0.1010010100111100110000001110101101000111010110000001111101110011E-16381", 2, GMP_RNDN);
-  d = mpfr_get_ld (x, GMP_RNDN);  /* infinite loop? */
-  mpfr_set_ld (y, d, GMP_RNDN);
-  mpfr_sub (z, x, y, GMP_RNDN);
-  mpfr_abs (z, z, GMP_RNDN);
+  mpfr_set_str (x, "0.1010010100111100110000001110101101000111010110000001111101110011E-16381", 2, MPFR_RNDN);
+  d = mpfr_get_ld (x, MPFR_RNDN);  /* infinite loop? */
+  mpfr_set_ld (y, d, MPFR_RNDN);
+  mpfr_sub (z, x, y, MPFR_RNDN);
+  mpfr_abs (z, z, MPFR_RNDN);
   mpfr_clear_erangeflag ();
   /* If long double = double, d should be equal to 0;
      in this case, everything is OK. */
-  if (d != 0 && (mpfr_cmp_str (z, "1E-16434", 2, GMP_RNDN) > 0 ||
+  if (d != 0 && (mpfr_cmp_str (z, "1E-16434", 2, MPFR_RNDN) > 0 ||
                  mpfr_erangeflag_p ()))
     {
       printf ("Error with x = ");
-      mpfr_out_str (NULL, 10, 21, x, GMP_RNDN);
+      mpfr_out_str (NULL, 10, 21, x, MPFR_RNDN);
       printf (" = ");
-      mpfr_out_str (NULL, 16, 0, x, GMP_RNDN);
+      mpfr_out_str (NULL, 16, 0, x, MPFR_RNDN);
       printf ("\n        -> d = %.21Lg", d);
       printf ("\n        -> y = ");
-      mpfr_out_str (NULL, 10, 21, y, GMP_RNDN);
+      mpfr_out_str (NULL, 10, 21, y, MPFR_RNDN);
       printf (" = ");
-      mpfr_out_str (NULL, 16, 0, y, GMP_RNDN);
+      mpfr_out_str (NULL, 16, 0, y, MPFR_RNDN);
       printf ("\n        -> |x-y| = ");
-      mpfr_out_str (NULL, 16, 0, z, GMP_RNDN);
+      mpfr_out_str (NULL, 16, 0, z, MPFR_RNDN);
       printf ("\n");
       exit (1);
     }
@@ -148,14 +156,102 @@ static void
 test_fixed_bugs (void)
 {
   mpfr_t x;
-  long double d;
+  long double l, m;
 
   /* bug found by Steve Kargl (2009-03-14) */
   mpfr_init2 (x, 64);
-  mpfr_set_ui_2exp (x, 1, -16447, GMP_RNDN);
-  d = mpfr_get_ld (x, GMP_RNDN);  /* an assertion failed in init2.c:50 */
+  mpfr_set_ui_2exp (x, 1, -16447, MPFR_RNDN);
+  mpfr_get_ld (x, MPFR_RNDN);  /* an assertion failed in init2.c:50 */
+
+  /* bug reported by Jakub Jelinek (2010-10-17)
+     https://gforge.inria.fr/tracker/?func=detail&aid=11300 */
+  mpfr_set_prec (x, MPFR_LDBL_MANT_DIG);
+  /* l = 0x1.23456789abcdef0123456789abcdp-914L; */
+  l = 8.215640181713713164092636634579e-276;
+  mpfr_set_ld (x, l, MPFR_RNDN);
+  m = mpfr_get_ld (x, MPFR_RNDN);
+  if (m != l)
+    {
+      printf ("Error in get_ld o set_ld for l=%Le\n", l);
+      printf ("Got m=%Le instead of l\n", m);
+      exit (1);
+    }
+
+  /* another similar test which failed with extended double precision and the
+     generic code for mpfr_set_ld */
+  /* l = 0x1.23456789abcdef0123456789abcdp-968L; */
+  l = 4.560596445887084662336528403703e-292;
+  mpfr_set_ld (x, l, MPFR_RNDN);
+  m = mpfr_get_ld (x, MPFR_RNDN);
+  if (m != l)
+    {
+      printf ("Error in get_ld o set_ld for l=%Le\n", l);
+      printf ("Got m=%Le instead of l\n", m);
+      exit (1);
+    }
 
   mpfr_clear (x);
+}
+
+/* bug reported by Walter Mascarenhas
+   https://sympa.inria.fr/sympa/arc/mpfr/2016-09/msg00005.html */
+static void
+bug_20160907 (void)
+{
+#if HAVE_LDOUBLE_IEEE_EXT_LITTLE
+  long double dn, ld;
+  mpfr_t mp;
+  long e;
+  mpfr_long_double_t x;
+
+  /* the following is the encoding of the smallest subnormal number
+     for HAVE_LDOUBLE_IEEE_EXT_LITTLE */
+  x.s.manl = 1;
+  x.s.manh = 0;
+  x.s.expl = 0;
+  x.s.exph = 0;
+  x.s.sign= 0;
+  dn = x.ld;
+  e = -16445;
+  /* dn=2^e is now the smallest subnormal. */
+
+  mpfr_init2 (mp, 64);
+  mpfr_set_ui_2exp (mp, 1, e - 1, MPFR_RNDN);
+  ld = mpfr_get_ld (mp, MPFR_RNDU);
+  /* since mp = 2^(e-1) and ld is rounded upwards, we should have
+     ld = 2^e */
+  if (ld != dn)
+    {
+      printf ("Error, ld = %Le <> dn = %Le\n", ld, dn);
+      printf ("mp=");
+      mpfr_out_str (stdout, 10, 0, mp, MPFR_RNDN);
+      printf ("\n");
+      exit (1);
+    }
+
+  /* check a few more numbers */
+  for (e = -16446; e <= -16381; e++)
+    {
+      mpfr_set_ui_2exp (mp, 1, e, MPFR_RNDN);
+      ld = mpfr_get_ld (mp, MPFR_RNDU);
+      mpfr_set_ld (mp, ld, MPFR_RNDU);
+      /* mp is 2^e rounded up, thus should be >= 2^e */
+      MPFR_ASSERTN(mpfr_cmp_ui_2exp (mp, 1, e) >= 0);
+
+      mpfr_set_ui_2exp (mp, 1, e, MPFR_RNDN);
+      ld = mpfr_get_ld (mp, MPFR_RNDD);
+      mpfr_set_ld (mp, ld, MPFR_RNDD);
+      /* mp is 2^e rounded down, thus should be <= 2^e */
+      if (mpfr_cmp_ui_2exp (mp, 3, e) > 0)
+        {
+          printf ("Error, expected value <= 2^%ld\n", e);
+          printf ("got "); mpfr_dump (mp);
+          exit (1);
+        }
+    }
+
+  mpfr_clear (mp);
+#endif
 }
 
 int
@@ -164,7 +260,7 @@ main (int argc, char *argv[])
   long double d, e;
   mpfr_t x;
   int i;
-  mp_exp_t emax;
+  mpfr_exp_t emax;
 #ifdef WITH_FPU_CONTROL
   fpu_control_t cw;
 
@@ -176,18 +272,20 @@ main (int argc, char *argv[])
     }
 #endif
 
-  check_gcc33_bug ();
-  test_fixed_bugs ();
-
   tests_start_mpfr ();
   mpfr_test_init ();
 
+  check_gcc33_bug ();
+  test_fixed_bugs ();
+
   mpfr_init2 (x, MPFR_LDBL_MANT_DIG);
 
+#if !defined(MPFR_ERRDIVZERO)
   /* check NaN */
   mpfr_set_nan (x);
-  d = mpfr_get_ld (x, GMP_RNDN);
+  d = mpfr_get_ld (x, MPFR_RNDN);
   check_set_get (d, x);
+#endif
 
   /* check +0.0 and -0.0 */
   d = 0.0;
@@ -196,25 +294,27 @@ main (int argc, char *argv[])
   check_set_get (d, x);
 
   /* check that the sign of -0.0 is set */
-  mpfr_set_ld (x, DBL_NEG_ZERO, GMP_RNDN);
+  mpfr_set_ld (x, DBL_NEG_ZERO, MPFR_RNDN);
   if (MPFR_SIGN(x) > 0)
     {
       printf ("Error: sign of -0.0 is not set correctly\n");
-#ifdef _GMP_IEEE_FLOATS
+#if _GMP_IEEE_FLOATS
       exit (1);
       /* Non IEEE doesn't support negative zero yet */
 #endif
     }
 
+#if !defined(MPFR_ERRDIVZERO)
   /* check +Inf */
   mpfr_set_inf (x, 1);
-  d = mpfr_get_ld (x, GMP_RNDN);
+  d = mpfr_get_ld (x, MPFR_RNDN);
   check_set_get (d, x);
 
   /* check -Inf */
   mpfr_set_inf (x, -1);
-  d = mpfr_get_ld (x, GMP_RNDN);
+  d = mpfr_get_ld (x, MPFR_RNDN);
   check_set_get (d, x);
+#endif
 
   /* check the largest power of two */
   d = 1.0; while (d < LDBL_MAX / 2.0) d += d;
@@ -250,7 +350,7 @@ main (int argc, char *argv[])
   for (i = 0; i < 10000; i++)
     {
       mpfr_urandomb (x, RANDS);
-      d = mpfr_get_ld (x, GMP_RNDN);
+      d = mpfr_get_ld (x, MPFR_RNDN);
       check_set_get (d, x);
     }
 
@@ -258,17 +358,19 @@ main (int argc, char *argv[])
   emax = mpfr_get_emax ();
   mpfr_set_prec (x, 2);
   set_emax (1);
-  mpfr_set_ld (x, (long double) 2.0, GMP_RNDN);
+  mpfr_set_ld (x, (long double) 2.0, MPFR_RNDN);
   MPFR_ASSERTN(mpfr_inf_p (x) && mpfr_sgn (x) > 0);
   for (d = (long double) 2.0, i = 0; i < 13; i++, d *= d);
   /* now d = 2^8192 */
-  mpfr_set_ld (x, d, GMP_RNDN);
+  mpfr_set_ld (x, d, MPFR_RNDN);
   MPFR_ASSERTN(mpfr_inf_p (x) && mpfr_sgn (x) > 0);
   set_emax (emax);
 
   mpfr_clear (x);
 
   test_small ();
+
+  bug_20160907 ();
 
   tests_end_mpfr ();
 

@@ -6,25 +6,23 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---                     Copyright (C) 2001-2010, AdaCore                     --
+--                     Copyright (C) 2001-2013, AdaCore                     --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
--- ware  Foundation;  either version 2,  or (at your option) any later ver- --
+-- ware  Foundation;  either version 3,  or (at your option) any later ver- --
 -- sion.  GNAT is distributed in the hope that it will be useful, but WITH- --
 -- OUT ANY WARRANTY;  without even the  implied warranty of MERCHANTABILITY --
--- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
--- for  more details.  You should have  received  a copy of the GNU General --
--- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
--- Boston, MA 02110-1301, USA.                                              --
+-- or FITNESS FOR A PARTICULAR PURPOSE.                                     --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
+-- As a special exception under Section 7 of GPL version 3, you are granted --
+-- additional permissions described in the GCC Runtime Library Exception,   --
+-- version 3.1, as published by the Free Software Foundation.               --
+--                                                                          --
+-- You should have received a copy of the GNU General Public License and    --
+-- a copy of the GCC Runtime Library Exception along with this program;     --
+-- see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see    --
+-- <http://www.gnu.org/licenses/>.                                          --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -38,8 +36,8 @@ with Ada.Unchecked_Conversion;
 
 with Interfaces.C.Strings;
 
-with GNAT.Sockets.Thin_Common;          use GNAT.Sockets.Thin_Common;
-with GNAT.Sockets.Thin;                 use GNAT.Sockets.Thin;
+with GNAT.Sockets.Thin_Common; use GNAT.Sockets.Thin_Common;
+with GNAT.Sockets.Thin;        use GNAT.Sockets.Thin;
 
 with GNAT.Sockets.Linker_Options;
 pragma Warnings (Off, GNAT.Sockets.Linker_Options);
@@ -82,7 +80,7 @@ package body GNAT.Sockets is
                   Shut_Write      => SOSC.SHUT_WR,
                   Shut_Read_Write => SOSC.SHUT_RDWR);
 
-   Requests : constant array (Request_Name) of C.int :=
+   Requests : constant array (Request_Name) of SOSC.IOCTL_Req_T :=
                 (Non_Blocking_IO => SOSC.FIONBIO,
                  N_Bytes_To_Read => SOSC.FIONREAD);
 
@@ -125,7 +123,7 @@ package body GNAT.Sockets is
    function Resolve_Error
      (Error_Value : Integer;
       From_Errno  : Boolean := True) return Error_Type;
-   --  Associate an enumeration value (error_type) to en error value (errno).
+   --  Associate an enumeration value (error_type) to an error value (errno).
    --  From_Errno prevents from mixing h_errno with errno.
 
    function To_Name   (N  : String) return Name_Type;
@@ -197,6 +195,17 @@ package body GNAT.Sockets is
    procedure Narrow (Item : in out Socket_Set_Type);
    --  Update Last as it may be greater than the real last socket
 
+   procedure Check_For_Fd_Set (Fd : Socket_Type);
+   pragma Inline (Check_For_Fd_Set);
+   --  Raise Constraint_Error if Fd is less than 0 or greater than or equal to
+   --  FD_SETSIZE, on platforms where fd_set is a bitmap.
+
+   function Connect_Socket
+     (Socket : Socket_Type;
+      Server : Sock_Addr_Type) return C.int;
+   pragma Inline (Connect_Socket);
+   --  Underlying implementation for the Connect_Socket procedures
+
    --  Types needed for Datagram_Socket_Stream_Type
 
    type Datagram_Socket_Stream_Type is new Root_Stream_Type with record
@@ -243,11 +252,11 @@ package body GNAT.Sockets is
    --  Type and Stream_Socket_Stream_Type.
 
    procedure Wait_On_Socket
-     (Socket    : Socket_Type;
-      For_Read  : Boolean;
-      Timeout   : Selector_Duration;
-      Selector  : access Selector_Type := null;
-      Status    : out Selector_Status);
+     (Socket   : Socket_Type;
+      For_Read : Boolean;
+      Timeout  : Selector_Duration;
+      Selector : access Selector_Type := null;
+      Status   : out Selector_Status);
    --  Common code for variants of socket operations supporting a timeout:
    --  block in Check_Selector on Socket for at most the indicated timeout.
    --  If For_Read is True, Socket is added to the read set for this call, else
@@ -465,6 +474,31 @@ package body GNAT.Sockets is
       end if;
    end Bind_Socket;
 
+   ----------------------
+   -- Check_For_Fd_Set --
+   ----------------------
+
+   procedure Check_For_Fd_Set (Fd : Socket_Type) is
+      use SOSC;
+
+   begin
+      --  On Windows, fd_set is a FD_SETSIZE array of socket ids:
+      --  no check required. Warnings suppressed because condition
+      --  is known at compile time.
+
+      if Target_OS = Windows then
+
+         return;
+
+      --  On other platforms, fd_set is an FD_SETSIZE bitmap: check
+      --  that Fd is within range (otherwise behaviour is undefined).
+
+      elsif Fd < 0 or else Fd >= SOSC.FD_SETSIZE then
+         raise Constraint_Error
+           with "invalid value for socket set: " & Image (Fd);
+      end if;
+   end Check_For_Fd_Set;
+
    --------------------
    -- Check_Selector --
    --------------------
@@ -481,10 +515,6 @@ package body GNAT.Sockets is
       Check_Selector
         (Selector, R_Socket_Set, W_Socket_Set, E_Socket_Set, Status, Timeout);
    end Check_Selector;
-
-   --------------------
-   -- Check_Selector --
-   --------------------
 
    procedure Check_Selector
      (Selector     : Selector_Type;
@@ -579,7 +609,10 @@ package body GNAT.Sockets is
       Socket : Socket_Type)
    is
       Last : aliased C.int := C.int (Item.Last);
+
    begin
+      Check_For_Fd_Set (Socket);
+
       if Item.Last /= No_Socket then
          Remove_Socket_From_Set (Item.Set'Access, C.int (Socket));
          Last_Socket_In_Set (Item.Set'Access, Last'Unchecked_Access);
@@ -631,11 +664,10 @@ package body GNAT.Sockets is
    -- Connect_Socket --
    --------------------
 
-   procedure Connect_Socket
+   function Connect_Socket
      (Socket : Socket_Type;
-      Server : Sock_Addr_Type)
+      Server : Sock_Addr_Type) return C.int
    is
-      Res : C.int;
       Sin : aliased Sockaddr_In;
       Len : constant C.int := Sin'Size / 8;
 
@@ -650,16 +682,18 @@ package body GNAT.Sockets is
         (Sin'Unchecked_Access,
          Short_To_Network (C.unsigned_short (Server.Port)));
 
-      Res := C_Connect (C.int (Socket), Sin'Address, Len);
+      return C_Connect (C.int (Socket), Sin'Address, Len);
+   end Connect_Socket;
 
-      if Res = Failure then
+   procedure Connect_Socket
+     (Socket : Socket_Type;
+      Server : Sock_Addr_Type)
+   is
+   begin
+      if Connect_Socket (Socket, Server) = Failure then
          Raise_Socket_Error (Socket_Errno);
       end if;
    end Connect_Socket;
-
-   --------------------
-   -- Connect_Socket --
-   --------------------
 
    procedure Connect_Socket
      (Socket   : Socket_Type;
@@ -671,6 +705,13 @@ package body GNAT.Sockets is
       Req : Request_Type;
       --  Used to set Socket to non-blocking I/O
 
+      Conn_Err : aliased Integer;
+      --  Error status of the socket after completion of select(2)
+
+      Res           : C.int;
+      Conn_Err_Size : aliased C.int := Conn_Err'Size / 8;
+      --  For getsockopt(2) call
+
    begin
       if Selector /= null and then not Is_Open (Selector.all) then
          raise Program_Error with "closed selector";
@@ -681,33 +722,59 @@ package body GNAT.Sockets is
       Req := (Name => Non_Blocking_IO, Enabled => True);
       Control_Socket (Socket, Request => Req);
 
-      --  Start operation (non-blocking), will raise Socket_Error with
-      --  EINPROGRESS.
+      --  Start operation (non-blocking), will return Failure with errno set
+      --  to EINPROGRESS.
 
-      begin
-         Connect_Socket (Socket, Server);
-      exception
-         when E : Socket_Error =>
-            if Resolve_Exception (E) = Operation_Now_In_Progress then
-               null;
-            else
-               raise;
-            end if;
-      end;
+      Res := Connect_Socket (Socket, Server);
+      if Res = Failure then
+         Conn_Err := Socket_Errno;
+         if Conn_Err /= SOSC.EINPROGRESS then
+            Raise_Socket_Error (Conn_Err);
+         end if;
+      end if;
 
-      --  Wait for socket to become available for writing
+      --  Wait for socket to become available for writing (unless the Timeout
+      --  is zero, in which case we consider that it has already expired, and
+      --  we do not need to wait at all).
 
-      Wait_On_Socket
-        (Socket    => Socket,
-         For_Read  => False,
-         Timeout   => Timeout,
-         Selector  => Selector,
-         Status    => Status);
+      if Timeout = 0.0 then
+         Status := Expired;
+
+      else
+         Wait_On_Socket
+           (Socket   => Socket,
+            For_Read => False,
+            Timeout  => Timeout,
+            Selector => Selector,
+            Status   => Status);
+      end if;
+
+      --  Check error condition (the asynchronous connect may have terminated
+      --  with an error, e.g. ECONNREFUSED) if select(2) completed.
+
+      if Status = Completed then
+         Res := C_Getsockopt
+           (C.int (Socket), SOSC.SOL_SOCKET, SOSC.SO_ERROR,
+            Conn_Err'Address, Conn_Err_Size'Access);
+
+         if Res /= 0 then
+            Conn_Err := Socket_Errno;
+         end if;
+
+      else
+         Conn_Err := 0;
+      end if;
 
       --  Reset the socket to blocking I/O
 
       Req := (Name => Non_Blocking_IO, Enabled => False);
       Control_Socket (Socket, Request => Req);
+
+      --  Report error condition if any
+
+      if Conn_Err /= 0 then
+         Raise_Socket_Error (Conn_Err);
+      end if;
    end Connect_Socket;
 
    --------------------
@@ -1079,6 +1146,7 @@ package body GNAT.Sockets is
       Level  : Level_Type := Socket_Level;
       Name   : Option_Name) return Option_Type
    is
+      use SOSC;
       use type C.unsigned_char;
 
       V8  : aliased Two_Ints;
@@ -1111,8 +1179,19 @@ package body GNAT.Sockets is
 
          when Send_Timeout    |
               Receive_Timeout =>
-            Len := VT'Size / 8;
-            Add := VT'Address;
+
+            --  The standard argument for SO_RCVTIMEO and SO_SNDTIMEO is a
+            --  struct timeval, but on Windows it is a milliseconds count in
+            --  a DWORD.
+
+            if Target_OS = Windows then
+               Len := V4'Size / 8;
+               Add := V4'Address;
+
+            else
+               Len := VT'Size / 8;
+               Add := VT'Address;
+            end if;
 
          when Linger          |
               Add_Membership  |
@@ -1168,7 +1247,21 @@ package body GNAT.Sockets is
 
          when Send_Timeout    |
               Receive_Timeout =>
-            Opt.Timeout := To_Duration (VT);
+
+            if Target_OS = Windows then
+
+               --  Timeout is in milliseconds, actual value is 500 ms +
+               --  returned value (unless it is 0).
+
+               if V4 = 0 then
+                  Opt.Timeout := 0.0;
+               else
+                  Opt.Timeout := Natural (V4) * 0.001 + 0.500;
+               end if;
+
+            else
+               Opt.Timeout := To_Duration (VT);
+            end if;
       end case;
 
       return Opt;
@@ -1456,6 +1549,8 @@ package body GNAT.Sockets is
       Socket : Socket_Type) return Boolean
    is
    begin
+      Check_For_Fd_Set (Socket);
+
       return Item.Last /= No_Socket
         and then Socket <= Item.Last
         and then Is_Socket_In_Set (Item.Set'Access, C.int (Socket)) /= 0;
@@ -1545,11 +1640,11 @@ package body GNAT.Sockets is
    --------------------
 
    procedure Wait_On_Socket
-     (Socket    : Socket_Type;
-      For_Read  : Boolean;
-      Timeout   : Selector_Duration;
-      Selector  : access Selector_Type := null;
-      Status    : out Selector_Status)
+     (Socket   : Socket_Type;
+      For_Read : Boolean;
+      Timeout  : Selector_Duration;
+      Selector : access Selector_Type := null;
+      Status   : out Selector_Status)
    is
       type Local_Selector_Access is access Selector_Type;
       for Local_Selector_Access'Storage_Size use Selector_Type'Size;
@@ -1614,7 +1709,7 @@ package body GNAT.Sockets is
    begin
       raise Host_Error with
         Err_Code_Image (H_Error)
-        & C.Strings.Value (Host_Error_Messages.Host_Error_Message (H_Error));
+          & Host_Error_Messages.Host_Error_Message (H_Error);
    end Raise_Host_Error;
 
    ------------------------
@@ -1625,8 +1720,7 @@ package body GNAT.Sockets is
       use type C.Strings.chars_ptr;
    begin
       raise Socket_Error with
-        Err_Code_Image (Error)
-        & C.Strings.Value (Socket_Error_Message (Error));
+        Err_Code_Image (Error) & Socket_Error_Message (Error);
    end Raise_Socket_Error;
 
    ----------
@@ -1670,8 +1764,6 @@ package body GNAT.Sockets is
       Item   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset)
    is
-      pragma Warnings (Off, Stream);
-
       First : Ada.Streams.Stream_Element_Offset          := Item'First;
       Index : Ada.Streams.Stream_Element_Offset          := First - 1;
       Max   : constant Ada.Streams.Stream_Element_Offset := Item'Last;
@@ -2102,6 +2194,8 @@ package body GNAT.Sockets is
 
    procedure Set (Item : in out Socket_Set_Type; Socket : Socket_Type) is
    begin
+      Check_For_Fd_Set (Socket);
+
       if Item.Last = No_Socket then
 
          --  Uninitialized socket set, make sure it is properly zeroed out
@@ -2115,6 +2209,22 @@ package body GNAT.Sockets is
 
       Insert_Socket_In_Set (Item.Set'Access, C.int (Socket));
    end Set;
+
+   -----------------------
+   -- Set_Close_On_Exec --
+   -----------------------
+
+   procedure Set_Close_On_Exec
+     (Socket        : Socket_Type;
+      Close_On_Exec : Boolean;
+      Status        : out Boolean)
+   is
+      function C_Set_Close_On_Exec
+        (Socket : Socket_Type; Close_On_Exec : C.int) return C.int;
+      pragma Import (C, C_Set_Close_On_Exec, "__gnat_set_close_on_exec");
+   begin
+      Status := C_Set_Close_On_Exec (Socket, Boolean'Pos (Close_On_Exec)) = 0;
+   end Set_Close_On_Exec;
 
    ----------------------
    -- Set_Forced_Flags --
@@ -2139,6 +2249,8 @@ package body GNAT.Sockets is
       Level  : Level_Type := Socket_Level;
       Option : Option_Type)
    is
+      use SOSC;
+
       V8  : aliased Two_Ints;
       V4  : aliased C.int;
       V1  : aliased C.unsigned_char;
@@ -2199,9 +2311,30 @@ package body GNAT.Sockets is
 
          when Send_Timeout    |
               Receive_Timeout =>
-            VT  := To_Timeval (Option.Timeout);
-            Len := VT'Size / 8;
-            Add := VT'Address;
+
+            if Target_OS = Windows then
+
+               --  On Windows, the timeout is a DWORD in milliseconds, and
+               --  the actual timeout is 500 ms + the given value (unless it
+               --  is 0).
+
+               V4 := C.int (Option.Timeout / 0.001);
+
+               if V4 > 500 then
+                  V4 := V4 - 500;
+
+               elsif V4 > 0 then
+                  V4 := 1;
+               end if;
+
+               Len := V4'Size / 8;
+               Add := V4'Address;
+
+            else
+               VT  := To_Timeval (Option.Timeout);
+               Len := VT'Size / 8;
+               Add := VT'Address;
+            end if;
 
       end case;
 
@@ -2224,16 +2357,11 @@ package body GNAT.Sockets is
       use type C.unsigned_short;
 
    begin
-      --  Big-endian case. No conversion needed. On these platforms,
-      --  htons() defaults to a null procedure.
-
-      pragma Warnings (Off);
-      --  Since the test can generate "always True/False" warning
+      --  Big-endian case. No conversion needed. On these platforms, htons()
+      --  defaults to a null procedure.
 
       if Default_Bit_Order = High_Order_First then
          return S;
-
-         pragma Warnings (On);
 
       --  Little-endian case. We must swap the high and low bytes of this
       --  short to make the port number network compliant.
@@ -2356,8 +2484,8 @@ package body GNAT.Sockets is
 
       Aliases_Count, Addresses_Count : Natural;
 
-      --  H_Length is not used because it is currently only set to 4
-      --  H_Addrtype is always AF_INET
+      --  H_Length is not used because it is currently only ever set to 4, as
+      --  H_Addrtype is always AF_INET.
 
    begin
       Aliases_Count := 0;
@@ -2385,10 +2513,24 @@ package body GNAT.Sockets is
          for J in Result.Addresses'Range loop
             declare
                Addr : In_Addr;
-               for Addr'Address use
-                 Hostent_H_Addr (E, C.int (J - Result.Addresses'First));
-               pragma Import (Ada, Addr);
+
+               --  Hostent_H_Addr (E, <index>) may return an address that is
+               --  not correctly aligned for In_Addr, so we need to use
+               --  an intermediate copy operation on a type with an alignemnt
+               --  of 1 to recover the value.
+
+               subtype Addr_Buf_T is C.char_array (1 .. Addr'Size / 8);
+               Unaligned_Addr : Addr_Buf_T;
+               for Unaligned_Addr'Address
+                 use Hostent_H_Addr (E, C.int (J - Result.Addresses'First));
+               pragma Import (Ada, Unaligned_Addr);
+
+               Aligned_Addr : Addr_Buf_T;
+               for Aligned_Addr'Address use Addr'Address;
+               pragma Import (Ada, Aligned_Addr);
+
             begin
+               Aligned_Addr := Unaligned_Addr;
                To_Inet_Addr (Addr, Result.Addresses (J));
             end;
          end loop;

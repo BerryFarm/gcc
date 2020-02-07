@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 2002-2009, Free Software Foundation, Inc.         --
+--          Copyright (C) 2002-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -33,8 +33,14 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
+pragma Compiler_Unit_Warning;
+
 package Interfaces is
    pragma Pure;
+
+   --  All identifiers in this unit are implementation defined
+
+   pragma Implementation_Defined;
 
    type Integer_8  is range -2 **  7 .. 2 **  7 - 1;
    for Integer_8'Size use  8;
@@ -155,9 +161,11 @@ package Interfaces is
 
    type IEEE_Float_32 is digits 6;
    pragma Float_Representation (IEEE_Float, IEEE_Float_32);
+   for IEEE_Float_32'Size use 32;
 
    type IEEE_Float_64 is digits 15;
    pragma Float_Representation (IEEE_Float, IEEE_Float_64);
+   for IEEE_Float_64'Size use 64;
 
    --  If there is an IEEE extended float available on the machine, we assume
    --  that it is available as Long_Long_Float.

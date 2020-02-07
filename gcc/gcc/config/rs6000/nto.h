@@ -20,9 +20,6 @@ Boston, MA 02111-1307, USA.  */
 
 #define HAVE_ATEXIT
 
-#undef TARGET_VERSION
-#define TARGET_VERSION fprintf (stderr, " (QNX/Neutrino/PowerPC ELF)");
-
 #undef TARGET_64BIT
 #define TARGET_64BIT 0
 
@@ -109,7 +106,11 @@ do {                                            \
 %(link_os) \
 %{EB} %{EL} \
 %{EL:-melf32lppcnto} %{!EL:-melf32ppcnto} %{MAP: -Map mapfile} \
-%{!shared: --dynamic-linker /usr/lib/ldqnx.so.2} "
+%{!r:--build-id=md5} \
+%{!shared: \
+  %{!static: \
+   %{rdynamic:-export-dynamic}} \
+  --dynamic-linker /usr/lib/ldqnx.so.2}"
 
 #undef CPP_SPEC
 #define CPP_SPEC \
@@ -119,7 +120,7 @@ QNX_SYSTEM_INCLUDES \
 
 #undef  STARTFILE_SPEC
 #define STARTFILE_SPEC \
-"%{!shared: %$QNX_TARGET/ppc%{!EL:be}%{EL:le}%{me500*:-spe}/lib/%{pg:m}%{p:m}crt1.o} \
+"%{!shared: %$QNX_TARGET/ppc%{!EL:be}%{EL:le}%{me500*:-spe}/lib/%{pg:m}%{p:m}crt1%{pie:S}.o} \
 %$QNX_TARGET/ppc%{!EL:be}%{EL:le}%{me500*:-spe}/lib/crti.o  crtbegin.o%s" \
 
 #undef  ENDFILE_SPEC
@@ -140,7 +141,7 @@ QNX_SYSTEM_INCLUDES \
 #undef	LIB_SPEC
 #define LIB_SPEC \
 QNX_SYSTEM_LIBDIRS \
-"%{!symbolic: -lc -Bstatic %{!shared: -lc} %{shared:-lcS}}"
+"%{!symbolic: -lc -Bstatic %{!shared: %{!pie: -lc}} %{shared|pie:-lcS}}"
 
 #undef	LIBGCC_SPEC
 #define	LIBGCC_SPEC "libgcc.a%s"

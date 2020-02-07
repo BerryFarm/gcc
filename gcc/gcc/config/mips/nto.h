@@ -38,7 +38,7 @@ Boston, MA 02111-1307, USA.  */
 #undef LIB_SPEC
 #define LIB_SPEC \
   QNX_SYSTEM_LIBDIRS \
-  "%{!symbolic: -lc -Bstatic %{!shared: -lc} %{shared:-lcS}}"
+  "%{!symbolic: -lc -Bstatic %{!shared: %{!pie: -lc}} %{shared|pie:-lcS}}"
 
 #undef LIBGCC_SPEC
 #define LIBGCC_SPEC "-lgcc"
@@ -49,7 +49,7 @@ Boston, MA 02111-1307, USA.  */
 
 #undef STARTFILE_SPEC
 #define STARTFILE_SPEC \
-"%{!shared: %$QNX_TARGET/mips%{EL:le}%{!EL:be}/lib/%{pg:m}%{p:m}crt1.o} \
+"%{!shared: %$QNX_TARGET/mips%{EL:le}%{!EL:be}/lib/%{pg:m}%{p:m}crt1%{pie:S}.o} \
 %$QNX_TARGET/mips%{EL:le}%{!EL:be}/lib/crti_PIC.o crtbegin.o%s"
 
 #undef ENDFILE_SPEC
@@ -64,7 +64,11 @@ Boston, MA 02111-1307, USA.  */
 %{!EL:%{!mel:-belf32-tradbigmips}} %{EL|mel:-belf32-tradlittlemips} \
 %{MAP: -Map mapfile} \
 %{static: -dn -Bstatic} \
-%{!shared: --dynamic-linker /usr/lib/ldqnx.so.3} \
+%{!r:--build-id=md5} \
+%{!shared: \
+  %{!static: \
+    %{rdynamic:-export-dynamic}} \
+  --dynamic-linker /usr/lib/ldqnx.so.3} \
 -melf32btsmip"
 
 #undef SUBTARGET_CC1_SPEC

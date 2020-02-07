@@ -19,17 +19,11 @@ along with GNU CC; see the file COPYING.  If not, write to
 the Free Software Foundation, 59 Temple Place - Suite 330,
 Boston, MA 02111-1307, USA.  */
 
-/* Run-time Target Specification.  */
-#undef TARGET_VERSION
-#define TARGET_VERSION  fputs (" (QNX/Neutrino/SH ELF)", stderr);
-
-/* For now force sjlj exception handling, for compatibility with 
-   older Dinkum libs. */
 #define DWARF2_UNWIND_INFO 1 
 
 #undef TARGET_DEFAULT 
-#define TARGET_DEFAULT  (TARGET_CPU_DEFAULT | MASK_USERMODE | \
-			TARGET_ENDIAN_DEFAULT | TARGET_OPT_DEFAULT)
+#define TARGET_DEFAULT  (TARGET_CPU_DEFAULT | TARGET_ENDIAN_DEFAULT \
+			| TARGET_OPT_DEFAULT)
 
 /* Return to the original ELF way.  */
 #undef USER_LABEL_PREFIX
@@ -61,6 +55,7 @@ Boston, MA 02111-1307, USA.  */
 QNX_SYSTEM_INCLUDES " \
  -D__SH4__ \
  %{posix:-D_POSIX_SOURCE} \
+ %{pthread:} \
  %{!mb:-D__LITTLE_ENDIAN__} \
  %{!mb:-D__LITTLEENDIAN__} \
  %{mb:-D__BIG_ENDIAN__} \
@@ -120,22 +115,36 @@ do                                                                     \
 
 #undef LINK_SPEC
 #define LINK_SPEC \
-"%{!mb:-EL}%{mb:-EB} -z now %{!mb:-m shlelf_nto}%{mb:-m shelf_nto} \
+"%{!mb:-EL}%{mb:-EB} %{!mb:-m shlelf_nto}%{mb:-m shelf_nto} \
  %{mrelax:-relax} -YP,%$QNX_TARGET/lib -YP,%$QNX_TARGET/usr/lib \
  %{MAP:-Map mapfile} %{static:-dn -Bstatic} %{shared:-G -dy} \
  %{symbolic: -Bsymbolic -G -dy} %{G:-G} \
- %{!shared: --dynamic-linker /usr/lib/ldqnx.so.2}"
+ %{!r:--build-id=md5} \
+ %{!shared: \
+   %{!static: \
+    %{rdynamic:-export-dynamic}} \
+   --dynamic-linker /usr/lib/ldqnx.so.2}"
 
 #undef  LIB_SPEC
 #define LIB_SPEC \
 QNX_SYSTEM_LIBDIRS \
-"%{!symbolic:-lc -dn -Bstatic %{!shared: -lc} %{shared: -lcS}}"
+"%{!symbolic: -lc -Bstatic %{!shared: %{!pie: -lc}} %{shared|pie:-lcS}}"
 
 #undef  STARTFILE_SPEC
 #define STARTFILE_SPEC \
-"%{!shared: %$QNX_TARGET/sh%{mb:be}%{!mb:le}/lib/%{pg:m}%{p:m}crt1.o} \
+"%{!shared: %$QNX_TARGET/sh%{mb:be}%{!mb:le}/lib/%{pg:m}%{p:m}crt1%{pie:S}.o} \
 %$QNX_TARGET/sh%{mb:be}%{!mb:le}/lib/crti.o crtbegin.o%s"
 
 #undef  ENDFILE_SPEC
 #define ENDFILE_SPEC "crtend.o%s \
 %$QNX_TARGET/sh%{mb:be}%{!mb:le}/lib/crtn.o"
+
+#undef SUBTARGET_OVERRIDE_OPTIONS
+#define SUBTARGET_OVERRIDE_OPTIONS					\
+  do									\
+    {									\
+      /* Set -musermode if it hasn't been specified.  */		\
+      if (global_options_set.x_TARGET_USERMODE == 0)			\
+	TARGET_USERMODE = true;						\
+    }									\
+  while (0)

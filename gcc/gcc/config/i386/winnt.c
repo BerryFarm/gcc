@@ -1,7 +1,6 @@
 /* Subroutines for insn-output.c for Windows NT.
    Contributed by Douglas Rupp (drupp@cs.washington.edu)
-   Copyright (C) 1995, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
-   2005, 2006, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 1995-2014 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -28,14 +27,27 @@ along with GCC; see the file COPYING3.  If not see
 #include "hard-reg-set.h"
 #include "output.h"
 #include "tree.h"
+#include "stringpool.h"
+#include "varasm.h"
 #include "flags.h"
 #include "tm_p.h"
 #include "diagnostic-core.h"
-#include "hashtab.h"
+#include "hash-table.h"
 #include "langhooks.h"
 #include "ggc.h"
 #include "target.h"
 #include "except.h"
+#include "pointer-set.h"
+#include "hash-table.h"
+#include "vec.h"
+#include "basic-block.h"
+#include "tree-ssa-alias.h"
+#include "internal-fn.h"
+#include "gimple-fold.h"
+#include "tree-eh.h"
+#include "gimple-expr.h"
+#include "is-a.h"
+#include "gimple.h"
 #include "lto-streamer.h"
 
 /* i386/PE specific attribute support.
@@ -111,6 +123,11 @@ i386_pe_determine_dllexport_p (tree decl)
   if (!TREE_PUBLIC (decl))
     return false;
 
+  if (TREE_CODE (decl) == FUNCTION_DECL
+      && DECL_DECLARED_INLINE_P (decl)
+      && !flag_keep_inline_dllexport)
+    return false; 
+
   if (lookup_attribute ("dllexport", DECL_ATTRIBUTES (decl)))
     return true;
 
@@ -170,7 +187,7 @@ gen_stdcall_or_fastcall_suffix (tree decl, tree id, bool fastcall)
   HOST_WIDE_INT total = 0;
   const char *old_str = IDENTIFIER_POINTER (id != NULL_TREE ? id : DECL_NAME (decl));
   char *new_str, *p;
-  tree type = TREE_TYPE (decl);
+  tree type = TREE_TYPE (DECL_ORIGIN (decl));
   tree arg;
   function_args_iterator args_iter;
 
@@ -202,7 +219,8 @@ gen_stdcall_or_fastcall_suffix (tree decl, tree id, bool fastcall)
 		       / parm_boundary_bytes * parm_boundary_bytes);
 	  total += parm_size;
 	}
-      }
+    }
+
   /* Assume max of 8 base 10 digits in the suffix.  */
   p = new_str = XALLOCAVEC (char, 1 + strlen (old_str) + 1 + 8 + 1);
   if (fastcall)
@@ -222,10 +240,16 @@ i386_pe_maybe_mangle_decl_assembler_name (tree decl, tree id)
 
   if (TREE_CODE (decl) == FUNCTION_DECL)
     { 
-      tree type_attributes = TYPE_ATTRIBUTES (TREE_TYPE (decl));
-      if (lookup_attribute ("stdcall", type_attributes))
-	new_id = gen_stdcall_or_fastcall_suffix (decl, id, false);
-      else if (lookup_attribute ("fastcall", type_attributes))
+      unsigned int ccvt = ix86_get_callcvt (TREE_TYPE (decl));
+      if ((ccvt & IX86_CALLCVT_STDCALL) != 0)
+        {
+	  if (TARGET_RTD)
+	    /* If we are using -mrtd emit undecorated symbol and let linker
+	       do the proper resolving.  */
+	    return NULL_TREE;
+	  new_id = gen_stdcall_or_fastcall_suffix (decl, id, false);
+	}
+      else if ((ccvt & IX86_CALLCVT_FASTCALL) != 0)
 	new_id = gen_stdcall_or_fastcall_suffix (decl, id, true);
     }
 
@@ -244,8 +268,9 @@ i386_pe_assemble_visibility (tree decl,
   if (!decl
       || !lookup_attribute ("visibility", DECL_ATTRIBUTES (decl)))
     return;
-  warning (OPT_Wattributes, "visibility attribute not supported "
-	   "in this configuration; ignored");
+  if (!DECL_ARTIFICIAL (decl))
+    warning (OPT_Wattributes, "visibility attribute not supported "
+			      "in this configuration; ignored");
 }
 
 /* This is used as a target hook to modify the DECL_ASSEMBLER_NAME
@@ -343,21 +368,22 @@ i386_pe_encode_section_info (tree decl, rtx rtl, int first)
   SYMBOL_REF_FLAGS (symbol) = flags;
 }
 
+
 bool
 i386_pe_binds_local_p (const_tree exp)
 {
-  /* PE does not do dynamic binding.  Indeed, the only kind of
-     non-local reference comes from a dllimport'd symbol.  */
   if ((TREE_CODE (exp) == VAR_DECL || TREE_CODE (exp) == FUNCTION_DECL)
       && DECL_DLLIMPORT_P (exp))
     return false;
 
-  /* Or a weak one, now that they are supported.  */
-  if ((TREE_CODE (exp) == VAR_DECL || TREE_CODE (exp) == FUNCTION_DECL)
-      && DECL_WEAK (exp))
-    return false;
-
-  return true;
+  /* External public symbols, which aren't weakref-s,
+     have local-binding for PE targets.  */
+  if (DECL_P (exp)
+      && !lookup_attribute ("weakref", DECL_ATTRIBUTES (exp))
+      && TREE_PUBLIC (exp)
+      && DECL_EXTERNAL (exp))
+    return true;
+  return default_binds_local_p_1 (exp, 0);
 }
 
 /* Also strip the fastcall prefix and stdcall suffix.  */
@@ -387,6 +413,10 @@ i386_pe_unique_section (tree decl, int reloc)
   const char *name, *prefix;
   char *string;
 
+  /* Ignore RELOC, if we are allowed to put relocated
+     const data into read-only section.  */
+  if (!flag_writable_rel_rdata)
+    reloc = 0;
   name = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (decl));
   name = i386_pe_strip_name_encoding_full (name);
 
@@ -409,6 +439,14 @@ i386_pe_unique_section (tree decl, int reloc)
   DECL_SECTION_NAME (decl) = build_string (len, string);
 }
 
+/* Local and global relocs can be placed always into readonly memory for
+   memory for PE-COFF targets.  */
+int
+i386_pe_reloc_rw_mask (void)
+{
+  return 0;
+}
+
 /* Select a set of attributes for section NAME based on the properties
    of DECL and whether or not RELOC indicates that DECL's initializer
    might contain runtime relocations.
@@ -429,15 +467,19 @@ i386_pe_unique_section (tree decl, int reloc)
 unsigned int
 i386_pe_section_type_flags (tree decl, const char *name, int reloc)
 {
-  static htab_t htab;
+  static hash_table <pointer_hash <unsigned int> > htab;
   unsigned int flags;
   unsigned int **slot;
 
+  /* Ignore RELOC, if we are allowed to put relocated
+     const data into read-only section.  */
+  if (!flag_writable_rel_rdata)
+    reloc = 0;
   /* The names we put in the hashtable will always be the unique
      versions given to us by the stringtable, so we can just use
      their addresses as the keys.  */
-  if (!htab)
-    htab = htab_create (31, htab_hash_pointer, htab_eq_pointer, NULL);
+  if (!htab.is_created ())
+    htab.create (31);
 
   if (decl && TREE_CODE (decl) == FUNCTION_DECL)
     flags = SECTION_CODE;
@@ -452,11 +494,11 @@ i386_pe_section_type_flags (tree decl, const char *name, int reloc)
 	flags |= SECTION_PE_SHARED;
     }
 
-  if (decl && DECL_ONE_ONLY (decl))
+  if (decl && DECL_P (decl) && DECL_ONE_ONLY (decl))
     flags |= SECTION_LINKONCE;
 
   /* See if we already have an entry for this section.  */
-  slot = (unsigned int **) htab_find_slot (htab, name, INSERT);
+  slot = htab.find_slot ((const unsigned int *)name, INSERT);
   if (!*slot)
     {
       *slot = (unsigned int *) xmalloc (sizeof (unsigned int));
@@ -477,6 +519,11 @@ i386_pe_asm_named_section (const char *name, unsigned int flags,
 {
   char flagchars[8], *f = flagchars;
 
+#if defined (HAVE_GAS_SECTION_EXCLUDE) && HAVE_GAS_SECTION_EXCLUDE == 1
+  if ((flags & SECTION_EXCLUDE) != 0)
+    *f++ = 'e';
+#endif
+
   if ((flags & (SECTION_CODE | SECTION_WRITE)) == 0)
     /* readonly data */
     {
@@ -491,6 +538,12 @@ i386_pe_asm_named_section (const char *name, unsigned int flags,
         *f++ = 'w';
       if (flags & SECTION_PE_SHARED)
         *f++ = 's';
+#if !defined (HAVE_GAS_SECTION_EXCLUDE) || HAVE_GAS_SECTION_EXCLUDE == 0
+      /* If attribute "e" isn't supported we mark this section as
+         never-load.  */
+      if ((flags & SECTION_EXCLUDE) != 0)
+	*f++ = 'n';
+#endif
     }
 
   /* LTO sections need 1-byte alignment to avoid confusing the
@@ -512,8 +565,9 @@ i386_pe_asm_named_section (const char *name, unsigned int flags,
 	 sets 'discard' characteristic, rather than telling linker
 	 to warn of size or content mismatch, so do the same.  */ 
       bool discard = (flags & SECTION_CODE)
-		      || lookup_attribute ("selectany",
-					   DECL_ATTRIBUTES (decl));	 
+		      || (TREE_CODE (decl) != IDENTIFIER_NODE
+			  && lookup_attribute ("selectany",
+					       DECL_ATTRIBUTES (decl)));
       fprintf (asm_out_file, "\t.linkonce %s\n",
 	       (discard  ? "discard" : "same_size"));
     }
@@ -611,7 +665,17 @@ struct GTY(()) export_list
   int is_data;		/* used to type tag exported symbols.  */
 };
 
+/* Keep a list of stub symbols.  */
+
+struct GTY(()) stub_list
+{
+  struct stub_list *next;
+  const char *name;
+};
+
 static GTY(()) struct export_list *export_head;
+
+static GTY(()) struct stub_list *stub_head;
 
 /* Assemble an export symbol entry.  We need to keep a list of
    these, so that we can output the export list at the end of the
@@ -643,14 +707,55 @@ i386_pe_maybe_record_exported_symbol (tree decl, const char *name, int is_data)
   export_head = p;
 }
 
+void
+i386_pe_record_stub (const char *name)
+{
+  struct stub_list *p;
+
+  if (!name || *name == 0)
+    return;
+
+  p = stub_head;
+  while (p != NULL)
+    {
+      if (p->name[0] == *name
+          && !strcmp (p->name, name))
+	return;
+      p = p->next;
+    }
+
+  p = ggc_alloc_stub_list ();
+  p->next = stub_head;
+  p->name = name;
+  stub_head = p;
+}
+
+
 #ifdef CXX_WRAP_SPEC_LIST
+
+/* Hashtable helpers.  */
+
+struct wrapped_symbol_hasher : typed_noop_remove <char>
+{
+  typedef char value_type;
+  typedef char compare_type;
+  static inline hashval_t hash (const value_type *);
+  static inline bool equal (const value_type *, const compare_type *);
+  static inline void remove (value_type *);
+};
+
+inline hashval_t
+wrapped_symbol_hasher::hash (const value_type *v)
+{
+  return htab_hash_string (v);
+}
 
 /*  Hash table equality helper function.  */
 
-static int
-wrapper_strcmp (const void *x, const void *y)
+inline bool
+wrapped_symbol_hasher::equal (const value_type *x, const compare_type *y)
 {
-  return !strcmp ((const char *) x, (const char *) y);
+  return !strcmp (x, y);
 }
 
 /* Search for a function named TARGET in the list of library wrappers
@@ -664,7 +769,7 @@ static const char *
 i386_find_on_wrapper_list (const char *target)
 {
   static char first_time = 1;
-  static htab_t wrappers;
+  static hash_table <wrapped_symbol_hasher> wrappers;
 
   if (first_time)
     {
@@ -677,8 +782,7 @@ i386_find_on_wrapper_list (const char *target)
       char *bufptr;
       /* Breaks up the char array into separated strings
          strings and enter them into the hash table.  */
-      wrappers = htab_create_alloc (8, htab_hash_string, wrapper_strcmp,
-	0, xcalloc, free);
+      wrappers.create (8);
       for (bufptr = wrapper_list_buffer; *bufptr; ++bufptr)
 	{
 	  char *found = NULL;
@@ -691,12 +795,12 @@ i386_find_on_wrapper_list (const char *target)
 	  if (*bufptr)
 	    *bufptr = 0;
 	  if (found)
-	    *htab_find_slot (wrappers, found, INSERT) = found;
+	    *wrappers.find_slot (found, INSERT) = found;
 	}
       first_time = 0;
     }
 
-  return (const char *) htab_find (wrappers, target);
+  return wrappers.find (target);
 }
 
 #endif /* CXX_WRAP_SPEC_LIST */
@@ -744,6 +848,30 @@ i386_pe_file_end (void)
 	  fprintf (asm_out_file, "\t.ascii \" -export:\\\"%s\\\"%s\"\n",
 		   default_strip_name_encoding (q->name),
 		   (q->is_data ? ",data" : ""));
+	}
+    }
+
+  if (stub_head)
+    {
+      struct stub_list *q;
+
+      for (q = stub_head; q != NULL; q = q->next)
+	{
+	  const char *name = q->name;
+	  const char *oname;
+
+	  if (name[0] == '*')
+	    ++name;
+	  oname = name;
+	  if (name[0] == '.')
+	    ++name;
+	  if (strncmp (name, "refptr.", 7) != 0)
+	    continue;
+	  name += 7;
+	  fprintf (asm_out_file, "\t.section\t.rdata$%s, \"dr\"\n"
+	  		   "\t.globl\t%s\n"
+			   "\t.linkonce\tdiscard\n", oname, oname);
+	  fprintf (asm_out_file, "%s:\n\t.quad\t%s\n", oname, name);
 	}
     }
 }
@@ -801,22 +929,6 @@ i386_pe_seh_end_prologue (FILE *f)
   if (cfun->is_thunk)
     return;
   seh = cfun->machine->seh;
-
-  /* Emit an assembler directive to set up the frame pointer.  Always do
-     this last.  The documentation talks about doing this "before" any
-     other code that uses offsets, but (experimentally) that's after we
-     emit the codes in reverse order (handled by the assembler).  */
-  if (seh->cfa_reg != stack_pointer_rtx)
-    {
-      HOST_WIDE_INT offset = seh->sp_offset - seh->cfa_offset;
-
-      gcc_assert ((offset & 15) == 0);
-      gcc_assert (IN_RANGE (offset, 0, 240));
-
-      fputs ("\t.seh_setframe\t", f);
-      print_reg (seh->cfa_reg, 0, f);
-      fprintf (f, ", " HOST_WIDE_INT_PRINT_DEC "\n", offset);
-    }
 
   XDELETE (seh);
   cfun->machine->seh = NULL;
@@ -888,7 +1000,10 @@ seh_emit_stackalloc (FILE *f, struct seh_frame_state *seh,
     seh->cfa_offset += offset;
   seh->sp_offset += offset;
 
-  fprintf (f, "\t.seh_stackalloc\t" HOST_WIDE_INT_PRINT_DEC "\n", offset);
+  /* Do not output the stackalloc in that case (it won't work as there is no
+     encoding for very large frame size).  */
+  if (offset < SEH_MAX_FRAME_SIZE)
+    fprintf (f, "\t.seh_stackalloc\t" HOST_WIDE_INT_PRINT_DEC "\n", offset);
 }
 
 /* Process REG_CFA_ADJUST_CFA for SEH.  */
@@ -921,8 +1036,19 @@ seh_cfa_adjust_cfa (FILE *f, struct seh_frame_state *seh, rtx pat)
     seh_emit_stackalloc (f, seh, reg_offset);
   else if (dest_regno == HARD_FRAME_POINTER_REGNUM)
     {
+      HOST_WIDE_INT offset;
+
       seh->cfa_reg = dest;
       seh->cfa_offset -= reg_offset;
+
+      offset = seh->sp_offset - seh->cfa_offset;
+
+      gcc_assert ((offset & 15) == 0);
+      gcc_assert (IN_RANGE (offset, 0, 240));
+
+      fputs ("\t.seh_setframe\t", f);
+      print_reg (seh->cfa_reg, 0, f);
+      fprintf (f, ", " HOST_WIDE_INT_PRINT_DEC "\n", offset);
     }
   else
     gcc_unreachable ();
@@ -1066,10 +1192,10 @@ i386_pe_seh_unwind_emit (FILE *asm_out_file, rtx insn)
 
   for (note = REG_NOTES (insn); note ; note = XEXP (note, 1))
     {
-      pat = XEXP (note, 0);
       switch (REG_NOTE_KIND (note))
 	{
 	case REG_FRAME_RELATED_EXPR:
+	  pat = XEXP (note, 0);
 	  goto found;
 
 	case REG_CFA_DEF_CFA:
@@ -1083,6 +1209,7 @@ i386_pe_seh_unwind_emit (FILE *asm_out_file, rtx insn)
 	  gcc_unreachable ();
 
 	case REG_CFA_ADJUST_CFA:
+	  pat = XEXP (note, 0);
 	  if (pat == NULL)
 	    {
 	      pat = PATTERN (insn);
@@ -1094,6 +1221,7 @@ i386_pe_seh_unwind_emit (FILE *asm_out_file, rtx insn)
 	  break;
 
 	case REG_CFA_OFFSET:
+	  pat = XEXP (note, 0);
 	  if (pat == NULL)
 	    pat = single_set (insn);
 	  seh_cfa_offset (asm_out_file, seh, pat);
@@ -1109,6 +1237,48 @@ i386_pe_seh_unwind_emit (FILE *asm_out_file, rtx insn)
   pat = PATTERN (insn);
  found:
   seh_frame_related_expr (asm_out_file, seh, pat);
+}
+
+void
+i386_pe_seh_emit_except_personality (rtx personality)
+{
+  int flags = 0;
+
+  if (!TARGET_SEH)
+    return;
+
+  fputs ("\t.seh_handler\t", asm_out_file);
+  output_addr_const (asm_out_file, personality);
+
+#if 0
+  /* ??? The current implementation of _GCC_specific_handler requires
+     both except and unwind handling, regardless of which sorts the
+     user-level function requires.  */
+  eh_region r;
+  FOR_ALL_EH_REGION(r)
+    {
+      if (r->type == ERT_CLEANUP)
+	flags |= 1;
+      else
+	flags |= 2;
+    }
+#else
+  flags = 3;
+#endif
+
+  if (flags & 1)
+    fputs (", @unwind", asm_out_file);
+  if (flags & 2)
+    fputs (", @except", asm_out_file);
+  fputc ('\n', asm_out_file);
+}
+
+void
+i386_pe_seh_init_sections (void)
+{
+  if (TARGET_SEH)
+    exception_section = get_unnamed_section (0, output_section_asm_op,
+					     "\t.seh_handlerdata");
 }
 
 void

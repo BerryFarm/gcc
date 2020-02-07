@@ -1,13 +1,13 @@
 /* Test compatibility mpf-mpfr.
 
-Copyright 2003, 2004, 2005, 2006, 2007, 2008, 2009 Free Software Foundation, Inc.
-Contributed by the Arenaire and Cacao projects, INRIA.
+Copyright 2003-2017 Free Software Foundation, Inc.
+Contributed by the AriC and Caramba projects, INRIA.
 
 This file is part of the GNU MPFR Library.
 
 The GNU MPFR Library is free software; you can redistribute it and/or modify
 it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or (at your
+the Free Software Foundation; either version 3 of the License, or (at your
 option) any later version.
 
 The GNU MPFR Library is distributed in the hope that it will be useful, but
@@ -16,26 +16,20 @@ or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public
 License for more details.
 
 You should have received a copy of the GNU Lesser General Public License
-along with the GNU MPFR Library; see the file COPYING.LIB.  If not, write to
-the Free Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
-MA 02110-1301, USA. */
+along with the GNU MPFR Library; see the file COPYING.LESSER.  If not, see
+http://www.gnu.org/licenses/ or write to the Free Software Foundation, Inc.,
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA. */
 
-#if defined (__cplusplus)
-#include <cstdio>
-#else
-#include <stdio.h>
-#endif
 #include <stdlib.h>
-#include <string.h>
 
-#include "gmp.h"
-#include "mpfr.h"
+#include "mpfr-test.h"
+
 #ifdef MPFR
 #include "mpf2mpfr.h"
 #endif
 
 int
-main ()
+main (void)
 {
   unsigned long int prec;
   unsigned long int prec2;
@@ -135,6 +129,10 @@ main ()
   /* MPF doen't have mpf_free_str */
   mpfr_free_str (s);
 
+  /* Use d, l and u to avoid a warning with -Wunused-but-set-variable
+     from GCC 4.6. The variables above were mainly used for prototype
+     checking. */
+  (void) d;  (void) l;  (void)  u;
 
   /* Arithmetic Functions */
 
@@ -207,11 +205,32 @@ main ()
   i = mpf_fits_ushort_p (x);
   i = mpf_fits_sshort_p (x);
 
-  gmp_randinit (state, GMP_RAND_ALG_LC, 128);
+  gmp_randinit_lc_2exp_size (state, 128);
   mpf_urandomb (x, state, 10);
   gmp_randclear (state);
 
-  mpf_random2 (x, 17, 17);
+  /* Conversion to mpz */
+  mpz_init (z);
+  mpf_set_ui (x, 17);
+  mpz_set_f (z, x);
+  mpf_set_z (x, z);
+  mpz_clear (z);
+  if (mpf_cmp_ui (x, 17) != 0)
+    {
+      fprintf (stderr, "Error in conversion to/from mpz\n");
+      fprintf (stderr, "expected 17, got %1.16e\n", mpf_get_d (x));
+      exit (1);
+    }
+
+  /* non-regression tests for bugs fixed in revision 11565 */
+  mpf_set_si (x, -1);
+  MPFR_ASSERTN(mpf_fits_ulong_p (x) == 0);
+  MPFR_ASSERTN(mpf_fits_slong_p (x) != 0);
+  MPFR_ASSERTN(mpf_fits_uint_p (x) == 0);
+  MPFR_ASSERTN(mpf_fits_sint_p (x) != 0);
+  MPFR_ASSERTN(mpf_fits_ushort_p (x) == 0);
+  MPFR_ASSERTN(mpf_fits_sshort_p (x) != 0);
+  MPFR_ASSERTN(mpf_get_si (x) == -1);
 
   /* clear all variables */
   mpf_clear (y);

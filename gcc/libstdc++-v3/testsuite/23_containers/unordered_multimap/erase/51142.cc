@@ -1,4 +1,4 @@
-// Copyright (C) 2011 Free Software Foundation, Inc.
+// Copyright (C) 2011-2014 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -27,12 +27,15 @@ struct X
   X(T&) {}
 };
 
+struct X_hash
+{ std::size_t operator()(const X&) const { return 0; } };
+
 bool operator==(const X&, const X&) { return false; }
 
 // LWG 2059.
-void erasor(std::unordered_multimap<X, int>& s, X x)
+void erasor(std::unordered_multimap<X, int, X_hash>& s, X x)
 {
-  std::unordered_multimap<X, int>::iterator it = s.find(x);
+  std::unordered_multimap<X, int, X_hash>::iterator it = s.find(x);
   if (it != s.end())
     s.erase(it);
 }

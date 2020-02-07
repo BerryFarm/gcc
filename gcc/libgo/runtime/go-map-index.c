@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 
+#include "runtime.h"
 #include "go-alloc.h"
 #include "go-assert.h"
 #include "map.h"
@@ -18,14 +19,14 @@ __go_map_rehash (struct __go_map *map)
 {
   const struct __go_map_descriptor *descriptor;
   const struct __go_type_descriptor *key_descriptor;
-  size_t key_offset;
+  uintptr_t key_offset;
   size_t key_size;
-  size_t (*hashfn) (const void *, size_t);
-  size_t old_bucket_count;
+  uintptr_t (*hashfn) (const void *, uintptr_t);
+  uintptr_t old_bucket_count;
   void **old_buckets;
-  size_t new_bucket_count;
+  uintptr_t new_bucket_count;
   void **new_buckets;
-  size_t i;
+  uintptr_t i;
 
   descriptor = map->__descriptor;
 
@@ -78,19 +79,26 @@ __go_map_index (struct __go_map *map, const void *key, _Bool insert)
 {
   const struct __go_map_descriptor *descriptor;
   const struct __go_type_descriptor *key_descriptor;
-  size_t key_offset;
-  _Bool (*equalfn) (const void*, const void*, size_t);
+  uintptr_t key_offset;
+  _Bool (*equalfn) (const void*, const void*, uintptr_t);
   size_t key_hash;
   size_t key_size;
   size_t bucket_index;
   char *entry;
+
+  if (map == NULL)
+    {
+      if (insert)
+	runtime_panicstring ("assignment to entry in nil map");
+      return NULL;
+    }
 
   descriptor = map->__descriptor;
 
   key_descriptor = descriptor->__map_descriptor->__key_type;
   key_offset = descriptor->__key_offset;
   key_size = key_descriptor->__size;
-  __go_assert (key_size != 0 && key_size != -1UL);
+  __go_assert (key_size != -1UL);
   equalfn = key_descriptor->__equalfn;
 
   key_hash = key_descriptor->__hashfn (key, key_size);

@@ -1,7 +1,6 @@
 // Specific definitions for GNU/Linux  -*- C++ -*-
 
-// Copyright (C) 2000, 2001, 2002, 2003, 2009, 2010
-// Free Software Foundation, Inc.
+// Copyright (C) 2000-2014 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -38,5 +37,12 @@
 #define __NO_CTYPE 1
 
 #include <features.h>
+
+// Provide a declaration for the possibly deprecated gets function, as
+// glibc 2.15 and later does not declare gets for ISO C11 when
+// __GNU_SOURCE is defined.
+#if __GLIBC_PREREQ(2,15) && defined(_GNU_SOURCE)
+# undef _GLIBCXX_HAVE_GETS
+#endif
 
 #endif

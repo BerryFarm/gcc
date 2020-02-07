@@ -40,6 +40,9 @@
 #ifdef HAVE_STRING_H
 #include <string.h>
 #endif
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
 
 #ifndef EXIT_SUCCESS
 #define EXIT_SUCCESS 0
@@ -204,7 +207,7 @@ writeout_test (int test, const char * test_data)
   if (parse == NULL)
     fatal_error (__LINE__, "Failed to malloc parse.", errno);
       
-  memcpy (parse, test_data, sizeof (char) * len);
+  memcpy (parse, test_data, sizeof (char) * (len + 1));
   /* Run all possible replaces */
   run_replaces (parse);
 

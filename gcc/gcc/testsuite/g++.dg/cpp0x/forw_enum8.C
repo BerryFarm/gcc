@@ -1,5 +1,4 @@
-// { dg-do compile }
-// { dg-options "-std=c++0x" }
+// { dg-do compile { target c++11 } }
 
 //This instatiation is ok
 template<typename T> struct S1
@@ -15,7 +14,7 @@ template<typename T> struct S2
     enum E : int;   // { dg-error "previous definition" }
     enum E : T;     // { dg-error "different underlying type" }
 };
-template struct S2<short>; // { dg-message "instantiated from here" }
+template struct S2<short>; // { dg-message "required from here" }
 
 //This error is diagnosed at compilation time
 template<typename T> struct S3

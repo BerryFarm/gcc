@@ -1,6 +1,5 @@
 /* Java(TM) language-specific utility routines.
-   Copyright (C) 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
-   2005, 2006, 2007, 2008, 2010, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1996-2014 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -43,6 +42,7 @@ The Free Software Foundation is independent of Sun Microsystems, Inc.  */
 #include "opts.h"
 #include "options.h"
 #include "target.h"
+#include "context.h"
 
 static bool java_init (void);
 static void java_finish (void);
@@ -75,8 +75,8 @@ static tree java_eh_personality (void);
 const struct attribute_spec java_attribute_table[] =
 {
  { "nonnull",                0, -1, false, true, true,
-			      NULL },
-  { NULL,                     0, 0, false, false, false, NULL }
+			      NULL, false },
+  { NULL,                     0, 0, false, false, false, NULL, false }
 };
 
 /* Used to avoid printing error messages with bogus function
@@ -272,7 +272,7 @@ java_handle_option (size_t scode, const char *arg, int value,
       break;
 
     case OPT_fdump_:
-      if (!dump_switch_p (arg))
+      if (!g->get_dumps ()->dump_switch_p (arg))
 	return false;
       break;
 
@@ -420,7 +420,8 @@ put_decl_node (tree node, int verbosity)
 	      if (TREE_CODE (TREE_TYPE (node)) == METHOD_TYPE)
 		args = TREE_CHAIN (args);
 	      put_decl_string ("(", 1);
-	      for ( ; args != end_params_node;  args = TREE_CHAIN (args), i++)
+	      for ( ; args != NULL_TREE && args != end_params_node;
+		   args = TREE_CHAIN (args), i++)
 		{
 		  if (i > 0)
 		    put_decl_string (",", 1);
@@ -557,6 +558,10 @@ java_init_options_struct (struct gcc_options *opts)
 
   /* Java requires left-to-right evaluation of subexpressions.  */
   opts->x_flag_evaluation_order = 1;
+
+  /* Java catches NULL pointer exceptions, thus we can not necessarily
+     rely on a pointer having a non-NULL value after a dereference.  */
+  opts->x_flag_delete_null_pointer_checks = 0;
 }
 
 static void

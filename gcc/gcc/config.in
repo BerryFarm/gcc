@@ -45,12 +45,6 @@
 #endif
 
 
-/* Define if building with C++. */
-#ifndef USED_FOR_TARGET
-#undef ENABLE_BUILD_WITH_CXX
-#endif
-
-
 /* Define if you want more run-time sanity checks. This one gets a grab bag of
    miscellaneous but relatively cheap checks. */
 #ifndef USED_FOR_TARGET
@@ -209,9 +203,9 @@
 #endif
 
 
-/* Define if the zone collector is in use */
+/* Define to 1 if `TIOCGWINSZ' requires <sys/ioctl.h>. */
 #ifndef USED_FOR_TARGET
-#undef GGC_ZONE
+#undef GWINSZ_IN_SYS_IOCTL
 #endif
 
 
@@ -267,6 +261,12 @@
 /* Define if your assembler supports explicit relocations. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_AS_EXPLICIT_RELOCS
+#endif
+
+
+/* Define if your assembler supports FMAF, HPC, and VIS 3.0 instructions. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_FMAF_HPC_VIS3
 #endif
 
 
@@ -331,6 +331,18 @@
 #endif
 
 
+/* Define if your assembler supports HLE prefixes. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_IX86_HLE
+#endif
+
+
+/* Define if your assembler supports interunit movq mnemonic. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_IX86_INTERUNIT_MOVQ
+#endif
+
+
 /* Define if your assembler supports the .quad directive. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_AS_IX86_QUAD
@@ -355,6 +367,30 @@
 #endif
 
 
+/* Define if your assembler and linker support @tlsgdplt. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_IX86_TLSGDPLT
+#endif
+
+
+/* Define to 1 if your assembler and linker support @tlsldm. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_IX86_TLSLDM
+#endif
+
+
+/* Define to 1 if your assembler and linker support @tlsldmplt. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_IX86_TLSLDMPLT
+#endif
+
+
+/* Define if your assembler supports the 'ud2' mnemonic. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_IX86_UD2
+#endif
+
+
 /* Define if your assembler supports the lituse_jsrdirect relocation. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_AS_JSRDIRECT_RELOCS
@@ -364,6 +400,12 @@
 /* Define if your assembler supports .sleb128 and .uleb128. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_AS_LEB128
+#endif
+
+
+/* Define if your assembler supports LEON instructions. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_LEON
 #endif
 
 
@@ -385,6 +427,12 @@
 #endif
 
 
+/* Define if your assembler supports the -mabi option. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_MABI_OPTION
+#endif
+
+
 /* Define if your assembler supports mfcr field. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_AS_MFCRF
@@ -394,6 +442,12 @@
 /* Define if your assembler supports mffgpr and mftgpr. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_AS_MFPGPR
+#endif
+
+
+/* Define if the assembler understands -mnan=. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_NAN
 #endif
 
 
@@ -427,6 +481,12 @@
 #endif
 
 
+/* Define if your assembler supports POWER8 instructions. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_POWER8
+#endif
+
+
 /* Define if your assembler supports .ref */
 #ifndef USED_FOR_TARGET
 #undef HAVE_AS_REF
@@ -451,9 +511,21 @@
 #endif
 
 
+/* Define if your assembler supports SPARC4 instructions. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_SPARC4
+#endif
+
+
 /* Define if your assembler and linker support GOTDATA_OP relocs. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_AS_SPARC_GOTDATA_OP
+#endif
+
+
+/* Define to 1 if your assembler supports #nobits, 0 otherwise. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_SPARC_NOBITS
 #endif
 
 
@@ -607,6 +679,12 @@
 #endif
 
 
+/* Define to 1 if we found a declaration for 'ffs', otherwise define to 0. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_DECL_FFS
+#endif
+
+
 /* Define to 1 if we found a declaration for 'fgetc_unlocked', otherwise
    define to 0. */
 #ifndef USED_FOR_TARGET
@@ -739,6 +817,13 @@
 #endif
 
 
+/* Define to 1 if we found a declaration for 'madvise', otherwise define to 0.
+   */
+#ifndef USED_FOR_TARGET
+#undef HAVE_DECL_MADVISE
+#endif
+
+
 /* Define to 1 if we found a declaration for 'malloc', otherwise define to 0.
    */
 #ifndef USED_FOR_TARGET
@@ -791,6 +876,13 @@
    0. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_DECL_SNPRINTF
+#endif
+
+
+/* Define to 1 if we found a declaration for 'stpcpy', otherwise define to 0.
+   */
+#ifndef USED_FOR_TARGET
+#undef HAVE_DECL_STPCPY
 #endif
 
 
@@ -988,6 +1080,12 @@
 #endif
 
 
+/* Define if your assembler supports the .set micromips directive */
+#ifndef USED_FOR_TARGET
+#undef HAVE_GAS_MICROMIPS
+#endif
+
+
 /* Define if your assembler supports .nsubspa comdat option. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_GAS_NSUBSPA_COMDAT
@@ -998,6 +1096,12 @@
    via '.secrel32 label'. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_GAS_PE_SECREL32_RELOC
+#endif
+
+
+/* Define if your assembler supports specifying the section flag e. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_GAS_SECTION_EXCLUDE
 #endif
 
 
@@ -1039,12 +1143,6 @@
 #endif
 
 
-/* Define if _Unwind_GetIPInfo is available. */
-#ifndef USED_FOR_TARGET
-#undef HAVE_GETIPINFO
-#endif
-
-
 /* Define to 1 if you have the `getrlimit' function. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_GETRLIMIT
@@ -1063,7 +1161,7 @@
 #endif
 
 
-/* Define if using GNU as. */
+/* Define to 1 if using GNU as. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_GNU_AS
 #endif
@@ -1075,7 +1173,7 @@
 #endif
 
 
-/* Define if using GNU ld. */
+/* Define to 1 if using GNU ld. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_GNU_LD
 #endif
@@ -1095,7 +1193,7 @@
 
 /* Define .init_array/.fini_array sections are available and working. */
 #ifndef USED_FOR_TARGET
-#undef HAVE_INITFINI_ARRAY
+#undef HAVE_INITFINI_ARRAY_SUPPORT
 #endif
 
 
@@ -1147,7 +1245,8 @@
 #endif
 
 
-/* Define if your linker supports --as-needed and --no-as-needed options. */
+/* Define if your linker supports --as-needed/--no-as-needed or equivalent
+   options. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_LD_AS_NEEDED
 #endif
@@ -1159,9 +1258,22 @@
 #endif
 
 
+/* Define if the linker supports clearing hardware capabilities via mapfile.
+   */
+#ifndef USED_FOR_TARGET
+#undef HAVE_LD_CLEARCAP
+#endif
+
+
 /* Define if your linker supports --demangle option. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_LD_DEMANGLE
+#endif
+
+
+/* Define 0/1 if your linker supports CIE v3 in .eh_frame. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_LD_EH_FRAME_CIEV3
 #endif
 
 
@@ -1256,9 +1368,15 @@
 #endif
 
 
-/* Define if your linker supports plugin. */
+/* Define to the level of your linker's plugin support. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_LTO_PLUGIN
+#endif
+
+
+/* Define to 1 if you have the `madvise' function. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_MADVISE
 #endif
 
 
@@ -1412,6 +1530,9 @@
 #endif
 
 
+/* Define if your target C library provides sys/sdt.h */
+#undef HAVE_SYS_SDT_H
+
 /* Define to 1 if you have the <sys/stat.h> header file. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_SYS_STAT_H
@@ -1551,9 +1672,21 @@
 #endif
 
 
+/* Define if F_SETLKW supported by fcntl. */
+#ifndef USED_FOR_TARGET
+#undef HOST_HAS_F_SETLKW
+#endif
+
+
 /* Define as const if the declaration of iconv() needs const. */
 #ifndef USED_FOR_TARGET
 #undef ICONV_CONST
+#endif
+
+
+/* Define to the linker option to ignore unused dependencies. */
+#ifndef USED_FOR_TARGET
+#undef LD_AS_NEEDED_OPTION
 #endif
 
 
@@ -1563,21 +1696,27 @@
 #endif
 
 
+/* Define to the linker option to keep unused dependencies. */
+#ifndef USED_FOR_TARGET
+#undef LD_NO_AS_NEEDED_OPTION
+#endif
+
+
 /* Define to the linker option to disable use of shared objects. */
 #ifndef USED_FOR_TARGET
 #undef LD_STATIC_OPTION
 #endif
 
 
-/* Define to the linker flags to use for -pthread. */
-#ifndef USED_FOR_TARGET
-#undef LIB_THREAD_LDFLAGS_SPEC
-#endif
-
-
 /* Define to the library containing __tls_get_addr/___tls_get_addr. */
 #ifndef USED_FOR_TARGET
 #undef LIB_TLS_SPEC
+#endif
+
+
+/* The linker hash style */
+#ifndef USED_FOR_TARGET
+#undef LINKER_HASH_STYLE
 #endif
 
 
@@ -1604,12 +1743,6 @@
 /* Define to 1 if HOST_WIDE_INT must be 64 bits wide (see hwint.h). */
 #ifndef USED_FOR_TARGET
 #undef NEED_64BIT_HOST_WIDE_INT
-#endif
-
-
-/* Define to 1 if your C compiler doesn't accept -c and -o together. */
-#ifndef USED_FOR_TARGET
-#undef NO_MINUS_C_MINUS_O
 #endif
 
 
@@ -1651,7 +1784,7 @@
 
 /* Specify plugin linker */
 #ifndef USED_FOR_TARGET
-#undef PLUGIN_LD
+#undef PLUGIN_LD_SUFFIX
 #endif
 
 

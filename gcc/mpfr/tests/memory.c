@@ -1,13 +1,13 @@
 /* Memory allocation used during tests.
 
-Copyright 2001, 2002, 2003, 2006, 2007, 2008, 2009 Free Software Foundation, Inc.
-Contributed by the Arenaire and Cacao projects, INRIA.
+Copyright 2001-2003, 2006-2017 Free Software Foundation, Inc.
+Contributed by the AriC and Caramba projects, INRIA.
 
 This file is part of the GNU MPFR Library.
 
 The GNU MPFR Library is free software; you can redistribute it and/or modify
 it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or (at your
+the Free Software Foundation; either version 3 of the License, or (at your
 option) any later version.
 
 The GNU MPFR Library is distributed in the hope that it will be useful, but
@@ -16,9 +16,9 @@ or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public
 License for more details.
 
 You should have received a copy of the GNU Lesser General Public License
-along with the GNU MPFR Library; see the file COPYING.LIB.  If not, write to
-the Free Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
-MA 02110-1301, USA. */
+along with the GNU MPFR Library; see the file COPYING.LESSER.  If not, see
+http://www.gnu.org/licenses/ or write to the Free Software Foundation, Inc.,
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA. */
 
 /* Note: this file comes from GMP's tests/memory.c */
 
@@ -68,7 +68,7 @@ tests_memory_valid (void *ptr)
 }
 */
 
-static void *
+void *
 tests_allocate (size_t size)
 {
   struct header  *h;
@@ -88,7 +88,7 @@ tests_allocate (size_t size)
   return h->ptr;
 }
 
-static void *
+void *
 tests_reallocate (void *ptr, size_t old_size, size_t new_size)
 {
   struct header  **hp, *h;
@@ -148,7 +148,7 @@ tests_free_nosize (void *ptr)
   __gmp_default_free (h, sizeof (*h));
 }
 
-static void
+void
 tests_free (void *ptr, size_t size)
 {
   struct header  **hp = tests_free_find (ptr);

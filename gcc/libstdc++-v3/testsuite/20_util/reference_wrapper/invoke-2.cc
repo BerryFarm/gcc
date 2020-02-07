@@ -1,6 +1,6 @@
 // { dg-options "-std=gnu++0x" }
 // { dg-do compile}
-// Copyright (C) 2011 Free Software Foundation, Inc.
+// Copyright (C) 2011-2014 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -35,8 +35,8 @@ void test01()
   X x = { };
   std::ref(m)(x, 1);
   std::ref(m)(&x, 1);
-  int& i1 = std::ref(m2)(x);
-  int& i2 = std::ref(m2)(&x);
+  int& i1 __attribute__((unused)) = std::ref(m2)(x);
+  int& i2 __attribute__((unused)) = std::ref(m2)(&x);
 }
 
 int main()

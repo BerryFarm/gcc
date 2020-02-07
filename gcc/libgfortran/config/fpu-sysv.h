@@ -1,8 +1,8 @@
 /* SysV FPU-related code (for systems not otherwise supported).
-   Copyright 2005, 2007, 2009 Free Software Foundation, Inc.
+   Copyright (C) 2005-2014 Free Software Foundation, Inc.
    Contributed by Francois-Xavier Coudert <coudert@clipper.ens.fr>
 
-This file is part of the GNU Fortran 95 runtime library (libgfortran).
+This file is part of the GNU Fortran runtime library (libgfortran).
 
 Libgfortran is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public
@@ -34,49 +34,170 @@ set_fpu (void)
 #ifdef FP_X_INV
     cw |= FP_X_INV;
 #else
-    st_printf ("Fortran runtime warning: IEEE 'invalid operation' "
-	       "exception not supported.\n");
+    estr_write ("Fortran runtime warning: IEEE 'invalid operation' "
+	        "exception not supported.\n");
 #endif
 
   if (options.fpe & GFC_FPE_DENORMAL)
 #ifdef FP_X_DNML
     cw |= FP_X_DNML;
 #else
-    st_printf ("Fortran runtime warning: IEEE 'denormal number' "
-	       "exception not supported.\n");
+    estr_write ("Fortran runtime warning: Floating point 'denormal operand' "
+	        "exception not supported.\n");
 #endif
 
   if (options.fpe & GFC_FPE_ZERO)
 #ifdef FP_X_DZ
     cw |= FP_X_DZ;
 #else
-    st_printf ("Fortran runtime warning: IEEE 'division by zero' "
-	       "exception not supported.\n");
+    estr_write ("Fortran runtime warning: IEEE 'division by zero' "
+	        "exception not supported.\n");
 #endif
 
   if (options.fpe & GFC_FPE_OVERFLOW)
 #ifdef FP_X_OFL
     cw |= FP_X_OFL;
 #else
-    st_printf ("Fortran runtime warning: IEEE 'overflow' "
-	       "exception not supported.\n");
+    estr_write ("Fortran runtime warning: IEEE 'overflow' "
+	        "exception not supported.\n");
 #endif
 
   if (options.fpe & GFC_FPE_UNDERFLOW)
 #ifdef FP_X_UFL
     cw |= FP_X_UFL;
 #else
-    st_printf ("Fortran runtime warning: IEEE 'underflow' "
-	       "exception not supported.\n");
+    estr_write ("Fortran runtime warning: IEEE 'underflow' "
+	        "exception not supported.\n");
 #endif
 
-  if (options.fpe & GFC_FPE_PRECISION)
+  if (options.fpe & GFC_FPE_INEXACT)
 #ifdef FP_X_IMP
     cw |= FP_X_IMP;
 #else
-    st_printf ("Fortran runtime warning: IEEE 'loss of precision' "
-	       "exception not supported.\n");
+    estr_write ("Fortran runtime warning: IEEE 'inexact' "
+	        "exception not supported.\n");
 #endif
 
   fpsetmask(cw);
+}
+
+int
+get_fpu_except_flags (void)
+{
+  int result;
+#if HAVE_FP_EXCEPT
+  fp_except set_excepts;
+#elif HAVE_FP_EXCEPT_T
+  fp_except_t set_excepts;
+#else
+  choke me
+#endif
+
+  result = 0;
+  set_excepts = fpgetsticky ();
+
+#ifdef FP_X_INV
+  if (set_excepts & FP_X_INV)
+    result |= GFC_FPE_INVALID;
+#endif
+
+#ifdef FP_X_DZ
+  if (set_excepts & FP_X_DZ)
+    result |= GFC_FPE_ZERO;
+#endif
+
+#ifdef FP_X_OFL
+  if (set_excepts & FP_X_OFL)
+    result |= GFC_FPE_OVERFLOW;
+#endif
+
+#ifdef FP_X_UFL
+  if (set_excepts & FP_X_UFL)
+    result |= GFC_FPE_UNDERFLOW;
+#endif
+
+#ifdef FP_X_DNML
+  if (set_excepts & FP_X_DNML)
+    result |= GFC_FPE_DENORMAL;
+#endif
+
+#ifdef FP_X_IMP
+  if (set_excepts & FP_X_IMP)
+    result |= GFC_FPE_INEXACT;
+#endif
+
+  return result;
+}
+
+
+int
+get_fpu_rounding_mode (void)
+{
+  switch (fpgetround ())
+    {
+#ifdef FP_RN
+      case FP_RN:
+	return GFC_FPE_TONEAREST;
+#endif
+
+#ifdef FP_RP
+      case FP_RP:
+	return GFC_FPE_UPWARD;
+#endif
+
+#ifdef FP_RM
+      case FP_RM:
+	return GFC_FPE_DOWNWARD;
+#endif
+
+#ifdef FP_RZ
+      case FP_RZ:
+	return GFC_FPE_TOWARDZERO;
+#endif
+      default:
+	return GFC_FPE_INVALID;
+    }
+}
+
+
+void
+set_fpu_rounding_mode (int mode)
+{
+#if HAVE_FP_RND
+  fp_rnd rnd_mode;
+#elif HAVE_FP_RND_T
+  fp_rnd_t rnd_mode;
+#else
+  choke me
+#endif
+
+  switch (mode)
+    {
+#ifdef FP_RN
+      case GFC_FPE_TONEAREST:
+	rnd_mode = FP_RN;
+        break;
+#endif
+
+#ifdef FP_RP
+      case GFC_FPE_UPWARD:
+	rnd_mode = FP_RP;
+        break;
+#endif
+
+#ifdef FP_RM
+      case GFC_FPE_DOWNWARD:
+	rnd_mode = FP_RM;
+        break;
+#endif
+
+#ifdef FP_RZ
+      case GFC_FPE_TOWARDZERO:
+	rnd_mode = FP_RZ;
+        break;
+#endif
+      default:
+	return;
+    }
+  fpsetround (rnd_mode);
 }

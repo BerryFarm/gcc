@@ -1,6 +1,5 @@
 /* Output routines for Motorola MCore processor
-   Copyright (C) 1993, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2007, 2008,
-   2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 1993-2014 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -24,6 +23,10 @@
 #include "tm.h"
 #include "rtl.h"
 #include "tree.h"
+#include "stor-layout.h"
+#include "varasm.h"
+#include "stringpool.h"
+#include "calls.h"
 #include "tm_p.h"
 #include "mcore.h"
 #include "regs.h"
@@ -96,7 +99,7 @@ static int        calc_live_regs                (int *);
 static int        try_constant_tricks           (long, HOST_WIDE_INT *, HOST_WIDE_INT *);
 static const char *     output_inline_const     (enum machine_mode, rtx *);
 static void       layout_mcore_frame            (struct mcore_frame *);
-static void       mcore_setup_incoming_varargs	(CUMULATIVE_ARGS *, enum machine_mode, tree, int *, int);
+static void       mcore_setup_incoming_varargs	(cumulative_args_t, enum machine_mode, tree, int *, int);
 static cond_type  is_cond_candidate             (rtx);
 static rtx        emit_new_cond_insn            (rtx, int);
 static rtx        conditionalize_block          (rtx);
@@ -121,51 +124,39 @@ static const char *mcore_strip_name_encoding	(const char *);
 static int        mcore_const_costs            	(rtx, RTX_CODE);
 static int        mcore_and_cost               	(rtx);
 static int        mcore_ior_cost               	(rtx);
-static bool       mcore_rtx_costs		(rtx, int, int, int *, bool);
+static bool       mcore_rtx_costs		(rtx, int, int, int,
+						 int *, bool);
 static void       mcore_external_libcall	(rtx);
 static bool       mcore_return_in_memory	(const_tree, const_tree);
-static int        mcore_arg_partial_bytes       (CUMULATIVE_ARGS *,
+static int        mcore_arg_partial_bytes       (cumulative_args_t,
 						 enum machine_mode,
 						 tree, bool);
-static rtx        mcore_function_arg            (CUMULATIVE_ARGS *,
+static rtx        mcore_function_arg            (cumulative_args_t,
 						 enum machine_mode,
 						 const_tree, bool);
-static void       mcore_function_arg_advance    (CUMULATIVE_ARGS *,
+static void       mcore_function_arg_advance    (cumulative_args_t,
 						 enum machine_mode,
 						 const_tree, bool);
 static unsigned int mcore_function_arg_boundary (enum machine_mode,
 						 const_tree);
 static void       mcore_asm_trampoline_template (FILE *);
 static void       mcore_trampoline_init		(rtx, tree, rtx);
+static bool       mcore_warn_func_return        (tree);
 static void       mcore_option_override		(void);
+static bool       mcore_legitimate_constant_p   (enum machine_mode, rtx);
 
 /* MCore specific attributes.  */
 
 static const struct attribute_spec mcore_attribute_table[] =
 {
-  /* { name, min_len, max_len, decl_req, type_req, fn_type_req, handler } */
-  { "dllexport", 0, 0, true,  false, false, NULL },
-  { "dllimport", 0, 0, true,  false, false, NULL },
-  { "naked",     0, 0, true,  false, false, mcore_handle_naked_attribute },
-  { NULL,        0, 0, false, false, false, NULL }
+  /* { name, min_len, max_len, decl_req, type_req, fn_type_req, handler,
+       affects_type_identity } */
+  { "dllexport", 0, 0, true,  false, false, NULL, false },
+  { "dllimport", 0, 0, true,  false, false, NULL, false },
+  { "naked",     0, 0, true,  false, false, mcore_handle_naked_attribute,
+    false },
+  { NULL,        0, 0, false, false, false, NULL, false }
 };
-
-/* What options are we going to default to specific settings when
-   -O* happens; the user can subsequently override these settings.
-  
-   Omitting the frame pointer is a very good idea on the MCore.
-   Scheduling isn't worth anything on the current MCore implementation.  */
-
-static const struct default_options mcore_option_optimization_table[] =
-  {
-    { OPT_LEVELS_1_PLUS, OPT_ffunction_cse, NULL, 0 },
-    { OPT_LEVELS_1_PLUS, OPT_fomit_frame_pointer, NULL, 1 },
-    { OPT_LEVELS_ALL, OPT_fcaller_saves, NULL, 0 },
-    { OPT_LEVELS_ALL, OPT_fschedule_insns, NULL, 0 },
-    { OPT_LEVELS_ALL, OPT_fschedule_insns2, NULL, 0 },
-    { OPT_LEVELS_SIZE, OPT_mhardlit, NULL, 0 },
-    { OPT_LEVELS_NONE, 0, NULL, 0 }
-  };
 
 /* Initialize the GCC target structure.  */
 #undef  TARGET_ASM_EXTERNAL_LIBCALL
@@ -196,8 +187,6 @@ static const struct default_options mcore_option_optimization_table[] =
 #define TARGET_ASM_UNIQUE_SECTION 	mcore_unique_section
 #undef  TARGET_ASM_FUNCTION_RODATA_SECTION
 #define TARGET_ASM_FUNCTION_RODATA_SECTION default_no_function_rodata_section
-#undef  TARGET_DEFAULT_TARGET_FLAGS
-#define TARGET_DEFAULT_TARGET_FLAGS	TARGET_DEFAULT
 #undef  TARGET_ENCODE_SECTION_INFO
 #define TARGET_ENCODE_SECTION_INFO 	mcore_encode_section_info
 #undef  TARGET_STRIP_NAME_ENCODING
@@ -205,7 +194,7 @@ static const struct default_options mcore_option_optimization_table[] =
 #undef  TARGET_RTX_COSTS
 #define TARGET_RTX_COSTS 		mcore_rtx_costs
 #undef  TARGET_ADDRESS_COST
-#define TARGET_ADDRESS_COST 		hook_int_rtx_bool_0
+#define TARGET_ADDRESS_COST 		hook_int_rtx_mode_as_bool_0
 #undef  TARGET_MACHINE_DEPENDENT_REORG
 #define TARGET_MACHINE_DEPENDENT_REORG	mcore_reorg
 
@@ -239,11 +228,12 @@ static const struct default_options mcore_option_optimization_table[] =
 
 #undef TARGET_OPTION_OVERRIDE
 #define TARGET_OPTION_OVERRIDE mcore_option_override
-#undef TARGET_OPTION_OPTIMIZATION_TABLE
-#define TARGET_OPTION_OPTIMIZATION_TABLE mcore_option_optimization_table
 
-#undef TARGET_EXCEPT_UNWIND_INFO
-#define TARGET_EXCEPT_UNWIND_INFO sjlj_except_unwind_info
+#undef TARGET_LEGITIMATE_CONSTANT_P
+#define TARGET_LEGITIMATE_CONSTANT_P mcore_legitimate_constant_p
+
+#undef TARGET_WARN_FUNC_RETURN
+#define TARGET_WARN_FUNC_RETURN mcore_warn_func_return
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 
@@ -526,8 +516,8 @@ mcore_ior_cost (rtx x)
 }
 
 static bool
-mcore_rtx_costs (rtx x, int code, int outer_code, int * total,
-		 bool speed ATTRIBUTE_UNUSED)
+mcore_rtx_costs (rtx x, int code, int outer_code, int opno ATTRIBUTE_UNUSED,
+		 int * total, bool speed ATTRIBUTE_UNUSED)
 {
   switch (code)
     {
@@ -928,10 +918,10 @@ mcore_is_dead (rtx first, rtx reg)
      to assume that it is live.  */
   for (insn = NEXT_INSN (first); insn; insn = NEXT_INSN (insn))
     {
-      if (GET_CODE (insn) == JUMP_INSN)
+      if (JUMP_P (insn))
 	return 0;	/* We lose track, assume it is alive.  */
 
-      else if (GET_CODE(insn) == CALL_INSN)
+      else if (CALL_P (insn))
 	{
 	  /* Call's might use it for target or register parms.  */
 	  if (reg_referenced_p (reg, PATTERN (insn))
@@ -940,7 +930,7 @@ mcore_is_dead (rtx first, rtx reg)
 	  else if (dead_or_set_p (insn, reg))
             return 1;
 	}
-      else if (GET_CODE (insn) == INSN)
+      else if (NONJUMP_INSN_P (insn))
 	{
 	  if (reg_referenced_p (reg, PATTERN (insn)))
             return 0;
@@ -1355,7 +1345,7 @@ mcore_output_movedouble (rtx operands[], enum machine_mode mode ATTRIBUTE_UNUSED
 	}
       else if (GET_CODE (src) == MEM)
 	{
-	  rtx memexp = memexp = XEXP (src, 0);
+	  rtx memexp = XEXP (src, 0);
 	  int dstreg = REGNO (dst);
 	  int basereg = -1;
 	  
@@ -1929,11 +1919,13 @@ mcore_initial_elimination_offset (int from, int to)
 /* Keep track of some information about varargs for the prolog.  */
 
 static void
-mcore_setup_incoming_varargs (CUMULATIVE_ARGS *args_so_far,
+mcore_setup_incoming_varargs (cumulative_args_t args_so_far_v,
 			      enum machine_mode mode, tree type,
 			      int * ptr_pretend_size ATTRIBUTE_UNUSED,
 			      int second_time ATTRIBUTE_UNUSED)
 {
+  CUMULATIVE_ARGS *args_so_far = get_cumulative_args (args_so_far_v);
+
   current_function_anonymous_args = 1;
 
   /* We need to know how many argument registers are used before
@@ -1978,8 +1970,7 @@ mcore_expand_prolog (void)
       
       gcc_assert (GET_CODE (x) == SYMBOL_REF);
       
-      if (mcore_current_function_name)
-	free (mcore_current_function_name);
+      free (mcore_current_function_name);
       
       mcore_current_function_name = xstrdup (XSTR (x, 0));
       
@@ -2019,7 +2010,8 @@ mcore_expand_prolog (void)
         {
           emit_insn (gen_movsi
                      (gen_rtx_MEM (SImode,
-                               plus_constant (stack_pointer_rtx, offset)),
+				   plus_constant (Pmode, stack_pointer_rtx,
+						  offset)),
                       gen_rtx_REG (SImode, rn)));
         }
     }
@@ -2054,7 +2046,8 @@ mcore_expand_prolog (void)
 	    {
 	      emit_insn (gen_movsi
 		         (gen_rtx_MEM (SImode,
-			           plus_constant (stack_pointer_rtx, offs)),
+				       plus_constant (Pmode, stack_pointer_rtx,
+						      offs)),
 		          gen_rtx_REG (SImode, i)));
 	      offs += 4;
 	    }
@@ -2149,7 +2142,8 @@ mcore_expand_epilog (void)
 	  emit_insn (gen_movsi
 		     (gen_rtx_REG (SImode, i),
 		      gen_rtx_MEM (SImode,
-			       plus_constant (stack_pointer_rtx, offs))));
+				   plus_constant (Pmode, stack_pointer_rtx,
+						  offs))));
 	  offs += 4;
 	}
     }
@@ -2264,7 +2258,7 @@ is_cond_candidate (rtx insn)
      changed into a conditional.  Only bother with SImode items.  If 
      we wanted to be a little more aggressive, we could also do other
      modes such as DImode with reg-reg move or load 0.  */
-  if (GET_CODE (insn) == INSN)
+  if (NONJUMP_INSN_P (insn))
     {
       rtx pat = PATTERN (insn);
       rtx src, dst;
@@ -2315,9 +2309,9 @@ is_cond_candidate (rtx insn)
       */            
 
     }
-  else if (GET_CODE (insn) == JUMP_INSN &&
-	   GET_CODE (PATTERN (insn)) == SET &&
-	   GET_CODE (XEXP (PATTERN (insn), 1)) == LABEL_REF)
+  else if (JUMP_P (insn)
+	   && GET_CODE (PATTERN (insn)) == SET
+	   && GET_CODE (XEXP (PATTERN (insn), 1)) == LABEL_REF)
     return COND_BRANCH_INSN;
 
   return COND_NO;
@@ -2338,7 +2332,7 @@ emit_new_cond_insn (rtx insn, int cond)
 
   pat = PATTERN (insn);
 
-  if (GET_CODE (insn) == INSN)
+  if (NONJUMP_INSN_P (insn))
     {
       dst = SET_DEST (pat);
       src = SET_SRC (pat);
@@ -2459,9 +2453,9 @@ conditionalize_block (rtx first)
   /* Check that the first insn is a candidate conditional jump.  This is
      the one that we'll eliminate.  If not, advance to the next insn to
      try.  */
-  if (GET_CODE (first) != JUMP_INSN ||
-      GET_CODE (PATTERN (first)) != SET ||
-      GET_CODE (XEXP (PATTERN (first), 1)) != IF_THEN_ELSE)
+  if (! JUMP_P (first)
+      || GET_CODE (PATTERN (first)) != SET
+      || GET_CODE (XEXP (PATTERN (first), 1)) != IF_THEN_ELSE)
     return NEXT_INSN (first);
 
   /* Extract some information we need.  */
@@ -2593,9 +2587,6 @@ conditionalize_optimization (void)
     continue;
 }
 
-static int saved_warn_return_type = -1;
-static int saved_warn_return_type_count = 0;
-
 /* This is to handle loads from the constant pool.  */
 
 static void
@@ -2603,21 +2594,6 @@ mcore_reorg (void)
 {
   /* Reset this variable.  */
   current_function_anonymous_args = 0;
-  
-  /* Restore the warn_return_type if it has been altered.  */
-  if (saved_warn_return_type != -1)
-    {
-      /* Only restore the value if we have reached another function.
-	 The test of warn_return_type occurs in final_function () in
-	 c-decl.c a long time after the code for the function is generated,
-	 so we need a counter to tell us when we have finished parsing that
-	 function and can restore the flag.  */
-      if (--saved_warn_return_type_count == 0)
-	{
-	  warn_return_type = saved_warn_return_type;
-	  saved_warn_return_type = -1;
-	}
-    }
   
   if (optimize == 0)
     return;
@@ -2802,7 +2778,7 @@ mcore_function_value (const_tree valtype, const_tree func)
    its data type forbids.  */
 
 static rtx
-mcore_function_arg (CUMULATIVE_ARGS *cum, enum machine_mode mode,
+mcore_function_arg (cumulative_args_t cum, enum machine_mode mode,
 		    const_tree type, bool named)
 {
   int arg_reg;
@@ -2813,7 +2789,7 @@ mcore_function_arg (CUMULATIVE_ARGS *cum, enum machine_mode mode,
   if (targetm.calls.must_pass_in_stack (mode, type))
     return 0;
 
-  arg_reg = ROUND_REG (*cum, mode);
+  arg_reg = ROUND_REG (*get_cumulative_args (cum), mode);
   
   if (arg_reg < NPARM_REGS)
     return handle_structs_in_regs (mode, type, FIRST_PARM_REG + arg_reg);
@@ -2822,9 +2798,11 @@ mcore_function_arg (CUMULATIVE_ARGS *cum, enum machine_mode mode,
 }
 
 static void
-mcore_function_arg_advance (CUMULATIVE_ARGS *cum, enum machine_mode mode,
+mcore_function_arg_advance (cumulative_args_t cum_v, enum machine_mode mode,
 			    const_tree type, bool named ATTRIBUTE_UNUSED)
 {
+  CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
+
   *cum = (ROUND_REG (*cum, mode)
 	  + (int)named * mcore_num_arg_regs (mode, type));
 }
@@ -2847,10 +2825,10 @@ mcore_function_arg_boundary (enum machine_mode mode,
    the function.  */
 
 static int
-mcore_arg_partial_bytes (CUMULATIVE_ARGS *cum, enum machine_mode mode,
+mcore_arg_partial_bytes (cumulative_args_t cum, enum machine_mode mode,
 			 tree type, bool named)
 {
-  int reg = ROUND_REG (*cum, mode);
+  int reg = ROUND_REG (*get_cumulative_args (cum), mode);
 
   if (named == 0)
     return 0;
@@ -3067,25 +3045,7 @@ static tree
 mcore_handle_naked_attribute (tree * node, tree name, tree args ATTRIBUTE_UNUSED,
 			      int flags ATTRIBUTE_UNUSED, bool * no_add_attrs)
 {
-  if (TREE_CODE (*node) == FUNCTION_DECL)
-    {
-      /* PR14310 - don't complain about lack of return statement
-	 in naked functions.  The solution here is a gross hack
-	 but this is the only way to solve the problem without
-	 adding a new feature to GCC.  I did try submitting a patch
-	 that would add such a new feature, but it was (rightfully)
-	 rejected on the grounds that it was creeping featurism,
-	 so hence this code.  */
-      if (warn_return_type)
-	{
-	  saved_warn_return_type = warn_return_type;
-	  warn_return_type = 0;
-	  saved_warn_return_type_count = 2;
-	}
-      else if (saved_warn_return_type_count)
-	saved_warn_return_type_count = 2;
-    }
-  else
+  if (TREE_CODE (*node) != FUNCTION_DECL)
     {
       warning (OPT_Wattributes, "%qE attribute only applies to functions",
 	       name);
@@ -3135,6 +3095,14 @@ int
 mcore_naked_function_p (void)
 {
   return lookup_attribute ("naked", DECL_ATTRIBUTES (current_function_decl)) != NULL_TREE;
+}
+
+static bool
+mcore_warn_func_return (tree decl)
+{
+  /* Naked functions are implemented entirely in assembly, including the
+     return sequence, so suppress warnings about this.  */
+  return lookup_attribute ("naked", DECL_ATTRIBUTES (decl)) == NULL_TREE;
 }
 
 #ifdef OBJECT_FORMAT_ELF
@@ -3203,4 +3171,14 @@ mcore_trampoline_init (rtx m_tramp, tree fndecl, rtx chain_value)
   emit_move_insn (mem, chain_value);
   mem = adjust_address (m_tramp, SImode, 12);
   emit_move_insn (mem, fnaddr);
+}
+
+/* Implement TARGET_LEGITIMATE_CONSTANT_P
+
+   On the MCore, allow anything but a double.  */
+
+static bool
+mcore_legitimate_constant_p (enum machine_mode mode ATTRIBUTE_UNUSED, rtx x)
+{
+  return GET_CODE (x) != CONST_DOUBLE;
 }

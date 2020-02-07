@@ -1,6 +1,5 @@
 /* Parser header
-   Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2014 Free Software Foundation, Inc.
    Contributed by Steven Bosscher
 
 This file is part of GCC.
@@ -30,7 +29,7 @@ typedef enum
   COMP_BLOCK_DATA, COMP_INTERFACE, COMP_DERIVED, COMP_DERIVED_CONTAINS,
   COMP_BLOCK, COMP_ASSOCIATE, COMP_IF,
   COMP_DO, COMP_SELECT, COMP_FORALL, COMP_WHERE, COMP_CONTAINS, COMP_ENUM,
-  COMP_SELECT_TYPE, COMP_OMP_STRUCTURED_BLOCK, COMP_CRITICAL
+  COMP_SELECT_TYPE, COMP_OMP_STRUCTURED_BLOCK, COMP_CRITICAL, COMP_DO_CONCURRENT
 }
 gfc_compile_state;
 
@@ -61,7 +60,7 @@ extern gfc_state_data *gfc_state_stack;
 #define gfc_current_state() (gfc_state_stack->state)
 
 int gfc_check_do_variable (gfc_symtree *);
-gfc_try gfc_find_state (gfc_compile_state);
+bool gfc_find_state (gfc_compile_state);
 gfc_state_data *gfc_enclosing_unit (gfc_compile_state *);
 const char *gfc_ascii_statement (gfc_statement);
 match gfc_match_enum (void);

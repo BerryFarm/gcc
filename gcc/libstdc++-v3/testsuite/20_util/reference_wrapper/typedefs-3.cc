@@ -1,7 +1,7 @@
 // { dg-options "-std=gnu++0x" }
 // { dg-do compile }
 
-// Copyright (C) 2011 Free Software Foundation, Inc.
+// Copyright (C) 2011-2014 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -44,7 +44,8 @@ struct S12 : S1, S2 { };
 
 struct S012 : S0, S1, S2 { };
 
-using std::__sfinae_types;
+using std::true_type;
+using std::false_type;
 using std::integral_constant;
 using std::remove_cv;
 
@@ -124,14 +125,14 @@ struct test_1st_2nd_arg_types<T, true>
 template<typename T>
   void test()
   {
-    test_arg_type<T> t;
-    test_arg_type<const T> tc;
-    test_arg_type<volatile T> tv;
-    test_arg_type<const volatile T> tcv;
-    test_1st_2nd_arg_types<T> t12;
-    test_1st_2nd_arg_types<const T> t12c;
-    test_1st_2nd_arg_types<volatile T> t12v;
-    test_1st_2nd_arg_types<const volatile T> t12cv;
+    test_arg_type<T> t __attribute__((unused));
+    test_arg_type<const T> tc __attribute__((unused));
+    test_arg_type<volatile T> tv __attribute__((unused));
+    test_arg_type<const volatile T> tcv __attribute__((unused));
+    test_1st_2nd_arg_types<T> t12 __attribute__((unused));
+    test_1st_2nd_arg_types<const T> t12c __attribute__((unused));
+    test_1st_2nd_arg_types<volatile T> t12v __attribute__((unused));
+    test_1st_2nd_arg_types<const volatile T> t12cv __attribute__((unused));
   }
 
 int main()

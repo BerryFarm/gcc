@@ -13,14 +13,14 @@
  */
 
 /*
-Copyright 2009 Free Software Foundation, Inc.
-Contributed by the Arenaire and Cacao projects, INRIA.
+Copyright 2009-2017 Free Software Foundation, Inc.
+Contributed by the AriC and Caramba projects, INRIA.
 
 This file is part of the GNU MPFR Library.
 
 The GNU MPFR Library is free software; you can redistribute it and/or modify
 it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or (at your
+the Free Software Foundation; either version 3 of the License, or (at your
 option) any later version.
 
 The GNU MPFR Library is distributed in the hope that it will be useful, but
@@ -29,9 +29,9 @@ or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public
 License for more details.
 
 You should have received a copy of the GNU Lesser General Public License
-along with the GNU MPFR Library; see the file COPYING.LIB.  If not, write to
-the Free Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
-MA 02110-1301, USA.
+along with the GNU MPFR Library; see the file COPYING.LESSER.  If not, see
+http://www.gnu.org/licenses/ or write to the Free Software Foundation, Inc.,
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 */
 
 #include <stdio.h>
@@ -73,19 +73,19 @@ int main (int argc, char *argv[])
   mpfr_inits2 (n, PRECN, (mpfr_ptr) 0);
   mpfr_init2 (t, p);
 
-  for (mpfr_set_ui_2exp (x, 1, -1, GMP_RNDN);
+  for (mpfr_set_ui_2exp (x, 1, -1, MPFR_RNDN);
        mpfr_get_exp (x) <= dmax;
        mpfr_nextabove (x))
-    for (mpfr_set_ui_2exp (y, 1, -1, GMP_RNDN);
+    for (mpfr_set_ui_2exp (y, 1, -1, MPFR_RNDN);
          mpfr_get_exp (y) == 0;
          mpfr_nextabove (y))
       {
         unsigned long rz, rn;
 
-        if (mpfr_sub (z, x, y, GMP_RNDZ) != 0)
+        if (mpfr_sub (z, x, y, MPFR_RNDZ) != 0)
           continue;  /* x - y is not representable in precision n */
-        rz = eval (x, y, z, t, GMP_RNDZ);
-        rn = eval (x, y, z, t, GMP_RNDN);
+        rz = eval (x, y, z, t, MPFR_RNDZ);
+        rn = eval (x, y, z, t, MPFR_RNDN);
         if (rz == rn)
           continue;
         mpfr_printf ("x = %.*Rb ; y = %.*Rb ; Z: %lu ; N: %lu\n",

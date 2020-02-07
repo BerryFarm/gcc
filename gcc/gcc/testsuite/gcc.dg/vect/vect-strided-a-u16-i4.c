@@ -12,6 +12,8 @@ typedef struct {
    unsigned short d;
 } s;
 
+volatile int y = 0;
+
 __attribute__ ((noinline)) int
 main1 ()
 {
@@ -27,8 +29,8 @@ main1 ()
       arr[i].b = i * 2;
       arr[i].c = 17;
       arr[i].d = i+34;
-      if (arr[i].a == 178)
-         abort();
+      if (y) /* Avoid vectorization.  */
+        abort ();
     }
 
   for (i = 0; i < N; i++)
@@ -68,6 +70,6 @@ int main (void)
   return 0;
 }
 
-/* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect"  { target { vect_interleave && vect_extract_even_odd } } } } */
+/* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect"  { target vect_strided4 } } } */
 /* { dg-final { cleanup-tree-dump "vect" } } */
   

@@ -3,7 +3,7 @@
 
 // 2010-02-25  Ed Smith-Rowland
 
-// Copyright (C) 2010, 2011 Free Software Foundation
+// Copyright (C) 2010-2014 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -71,6 +71,12 @@ void test01()
 
   do_test<long long>();
   do_test<unsigned long long>();
+
+  // GNU Extensions.
+#ifdef _GLIBCXX_USE_INT128
+  do_test<__int128>();
+  do_test<unsigned __int128>();
+#endif
 
   do_test<float>();
   do_test<double>();

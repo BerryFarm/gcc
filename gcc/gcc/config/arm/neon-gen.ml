@@ -1,5 +1,5 @@
 (* Auto-generate ARM Neon intrinsics header file.
-   Copyright (C) 2006, 2007, 2009 Free Software Foundation, Inc.
+   Copyright (C) 2006-2014 Free Software Foundation, Inc.
    Contributed by CodeSourcery.
 
    This file is part of GCC.
@@ -91,14 +91,13 @@ let print_function arity fnname body =
   end;
   open_braceblock ffmt;
   let rec print_lines = function
-    [] -> ()
+    []       -> ()
+  | "" :: lines -> print_lines lines
   | [line] -> Format.printf "%s" line
-  | line::lines -> Format.printf "%s@," line; print_lines lines in
+  | line::lines -> Format.printf "%s@," line ; print_lines lines in
   print_lines body;
   close_braceblock ffmt;
   end_function ffmt
-
-let return_by_ptr features = List.mem ReturnPtr features
 
 let union_string num elts base =
   let itype = inttype_for_array num elts in
@@ -115,6 +114,7 @@ let rec signed_ctype = function
   | T_uint32x4 -> T_int32x4
   | T_uint64x1 -> T_int64x1
   | T_uint64x2 -> T_int64x2
+  | T_poly64x2 -> T_int64x2
   (* Cast to types defined by mode in arm.c, not random types pulled in from
      the <stdint.h> header in use. This fixes incompatible pointer errors when
      compiling with C++.  *)
@@ -122,9 +122,12 @@ let rec signed_ctype = function
   | T_uint16 | T_int16 -> T_intHI
   | T_uint32 | T_int32 -> T_intSI
   | T_uint64 | T_int64 -> T_intDI
+  | T_float16 -> T_floatHF
   | T_float32 -> T_floatSF
   | T_poly8 -> T_intQI
   | T_poly16 -> T_intHI
+  | T_poly64 -> T_intDI
+  | T_poly128 -> T_intTI
   | T_arrayof (n, elt) -> T_arrayof (n, signed_ctype elt)
   | T_ptrto elt -> T_ptrto (signed_ctype elt)
   | T_const elt -> T_const (signed_ctype elt)
@@ -141,29 +144,76 @@ let cast_for_return to_ty = "(" ^ (string_of_vectype to_ty) ^ ")"
 
 (* Return a tuple of a list of declarations to go at the start of the function,
    and a list of statements needed to return THING.  *)
-let return arity return_by_ptr thing =
+let return arity thing =
   match arity with
     Arity0 (ret) | Arity1 (ret, _) | Arity2 (ret, _, _) | Arity3 (ret, _, _, _)
   | Arity4 (ret, _, _, _, _) ->
-    match ret with
-      T_arrayof (num, vec) ->
-        if return_by_ptr then
-          let sname = string_of_vectype ret in
-          [Printf.sprintf "%s __rv;" sname],
-          [thing ^ ";"; "return __rv;"]
-        else
+      begin match ret with
+	T_arrayof (num, vec) ->
           let uname = union_string num vec "__rv" in
           [uname ^ ";"], ["__rv.__o = " ^ thing ^ ";"; "return __rv.__i;"]
-    | T_void -> [], [thing ^ ";"]
-    | _ ->
-        [], ["return " ^ (cast_for_return ret) ^ thing ^ ";"]
+      | T_void ->
+	  [], [thing ^ ";"]
+      | _ ->
+	  [], ["return " ^ (cast_for_return ret) ^ thing ^ ";"]
+      end
+
+let mask_shape_for_shuffle = function
+    All (num, reg) -> All (num, reg)
+  | Pair_result reg -> All (2, reg)
+  | _ -> failwith "mask_for_shuffle"
+
+let mask_elems shuffle shape elttype part =
+  let elem_size = elt_width elttype in
+  let num_elems =
+    match regmap shape 0 with
+      Dreg -> 64 / elem_size
+    | Qreg -> 128 / elem_size
+    | _ -> failwith "mask_elems" in
+  shuffle elem_size num_elems part
+
+(* Return a tuple of a list of declarations 0and a list of statements needed
+   to implement an intrinsic using __builtin_shuffle.  SHUFFLE is a function
+   which returns a list of elements suitable for using as a mask.  *)
+
+let shuffle_fn shuffle shape arity elttype =
+  let mshape = mask_shape_for_shuffle shape in
+  let masktype = type_for_elt mshape (unsigned_of_elt elttype) 0 in
+  let masktype_str = string_of_vectype masktype in
+  let shuffle_res = type_for_elt mshape elttype 0 in
+  let shuffle_res_str = string_of_vectype shuffle_res in
+  match arity with
+    Arity0 (ret) | Arity1 (ret, _) | Arity2 (ret, _, _) | Arity3 (ret, _, _, _)
+  | Arity4 (ret, _, _, _, _) ->
+      begin match ret with
+        T_arrayof (num, vec) ->
+	  let elems1 = mask_elems shuffle mshape elttype `lo
+	  and elems2 = mask_elems shuffle mshape elttype `hi in
+	  let mask1 = (String.concat ", " (List.map string_of_int elems1))
+	  and mask2 = (String.concat ", " (List.map string_of_int elems2)) in
+	  let shuf1 = Printf.sprintf
+	    "__rv.val[0] = (%s) __builtin_shuffle (__a, __b, (%s) { %s });"
+	    shuffle_res_str masktype_str mask1
+	  and shuf2 = Printf.sprintf
+	    "__rv.val[1] = (%s) __builtin_shuffle (__a, __b, (%s) { %s });"
+	    shuffle_res_str masktype_str mask2 in
+	  [Printf.sprintf "%s __rv;" (string_of_vectype ret);],
+	  [shuf1; shuf2; "return __rv;"]
+      | _ ->
+          let elems = mask_elems shuffle mshape elttype `lo in
+          let mask =  (String.concat ", " (List.map string_of_int elems)) in
+	  let shuf = Printf.sprintf
+	    "return (%s) __builtin_shuffle (__a, (%s) { %s });" shuffle_res_str masktype_str mask in
+	  [""],
+	  [shuf]
+      end
 
 let rec element_type ctype =
   match ctype with
     T_arrayof (_, v) -> element_type v
   | _ -> ctype
 
-let params return_by_ptr ps =
+let params ps =
   let pdecls = ref [] in
   let ptype t p =
     match t with
@@ -180,13 +230,7 @@ let params return_by_ptr ps =
   | Arity3 (_, t1, t2, t3) -> [ptype t1 "__a"; ptype t2 "__b"; ptype t3 "__c"]
   | Arity4 (_, t1, t2, t3, t4) ->
       [ptype t1 "__a"; ptype t2 "__b"; ptype t3 "__c"; ptype t4 "__d"] in
-  match ps with
-    Arity0 ret | Arity1 (ret, _) | Arity2 (ret, _, _) | Arity3 (ret, _, _, _)
-  | Arity4 (ret, _, _, _, _) ->
-      if return_by_ptr then
-        !pdecls, add_cast (T_ptrto (element_type ret)) "&__rv.val[0]" :: plist
-      else
-        !pdecls, plist
+  !pdecls, plist
 
 let modify_params features plist =
   let is_flipped =
@@ -235,24 +279,65 @@ let rec mode_suffix elttype shape =
     let mode = mode_of_elt elttype shape in
     string_of_mode mode
   with MixedMode (dst, src) ->
-    let dstmode = mode_of_elt dst shape
-    and srcmode = mode_of_elt src shape in
+    let dstmode = mode_of_elt ~argpos:0 dst shape
+    and srcmode = mode_of_elt ~argpos:1 src shape in
     string_of_mode dstmode ^ string_of_mode srcmode
+
+let get_shuffle features =
+  try
+    match List.find (function Use_shuffle _ -> true | _ -> false) features with
+      Use_shuffle fn -> Some fn
+    | _ -> None
+  with Not_found -> None
+
+let print_feature_test_start features =
+  try
+    match List.find (fun feature ->
+                       match feature with Requires_feature _ -> true
+                                        | Requires_arch _ -> true
+                                        | Requires_FP_bit _ -> true
+                                        | _ -> false)
+                     features with
+      Requires_feature feature ->
+        Format.printf "#ifdef __ARM_FEATURE_%s@\n" feature
+    | Requires_arch arch ->
+        Format.printf "#if __ARM_ARCH >= %d@\n" arch
+    | Requires_FP_bit bit ->
+        Format.printf "#if ((__ARM_FP & 0x%X) != 0)@\n"
+                      (1 lsl bit)
+    | _ -> assert false
+  with Not_found -> assert true
+
+let print_feature_test_end features =
+  let feature =
+    List.exists (function Requires_feature _ -> true
+                          | Requires_arch _ -> true
+                          | Requires_FP_bit _ -> true
+                          |  _ -> false) features in
+  if feature then Format.printf "#endif@\n"
+
 
 let print_variant opcode features shape name (ctype, asmtype, elttype) =
   let bits = infoword_value elttype features in
   let modesuf = mode_suffix elttype shape in
-  let return_by_ptr = return_by_ptr features in
-  let pdecls, paramlist = params return_by_ptr ctype in
-  let paramlist' = modify_params features paramlist in
-  let paramlist'' = extra_word shape features paramlist' bits in
-  let parstr = String.concat ", " paramlist'' in
-  let builtin = Printf.sprintf "__builtin_neon_%s%s (%s)"
-                  (builtin_name features name) modesuf parstr in
-  let rdecls, stmts = return ctype return_by_ptr builtin in
+  let pdecls, paramlist = params ctype in
+  let rdecls, stmts =
+    match get_shuffle features with
+      Some shuffle -> shuffle_fn shuffle shape ctype elttype
+    | None ->
+	let paramlist' = modify_params features paramlist in
+	let paramlist'' = extra_word shape features paramlist' bits in
+	let parstr = String.concat ", " paramlist'' in
+	let builtin = Printf.sprintf "__builtin_neon_%s%s (%s)"
+                	(builtin_name features name) modesuf parstr in
+	return ctype builtin in
   let body = pdecls @ rdecls @ stmts
   and fnname = (intrinsic_name name) ^ "_" ^ (string_of_elt elttype) in
-  print_function ctype fnname body
+  begin
+    print_feature_test_start features;
+    print_function ctype fnname body;
+    print_feature_test_end features;
+  end
 
 (* When this function processes the element types in the ops table, it rewrites
    them in a list of tuples (a,b,c):
@@ -280,79 +365,96 @@ let print_ops ops =
      abase : "ARM" base name for the type (i.e. int in int8x8_t).
      esize : element size.
      enum : element count.
+     alevel: architecture level at which available.
 *)
+
+type fpulevel = CRYPTO | ALL
 
 let deftypes () =
   let typeinfo = [
     (* Doubleword vector types.  *)
-    "__builtin_neon_qi", "int", 8, 8;
-    "__builtin_neon_hi", "int", 16, 4;
-    "__builtin_neon_si", "int", 32, 2;
-    "__builtin_neon_di", "int", 64, 1;
-    "__builtin_neon_sf", "float", 32, 2;
-    "__builtin_neon_poly8", "poly", 8, 8;
-    "__builtin_neon_poly16", "poly", 16, 4;
-    "__builtin_neon_uqi", "uint", 8, 8;
-    "__builtin_neon_uhi", "uint", 16, 4;
-    "__builtin_neon_usi", "uint", 32, 2;
-    "__builtin_neon_udi", "uint", 64, 1;
+    "__builtin_neon_qi", "int", 8, 8, ALL;
+    "__builtin_neon_hi", "int", 16, 4, ALL;
+    "__builtin_neon_si", "int", 32, 2, ALL;
+    "__builtin_neon_di", "int", 64, 1, ALL;
+    "__builtin_neon_hf", "float", 16, 4, ALL;
+    "__builtin_neon_sf", "float", 32, 2, ALL;
+    "__builtin_neon_poly8", "poly", 8, 8, ALL;
+    "__builtin_neon_poly16", "poly", 16, 4, ALL;
+    "__builtin_neon_poly64", "poly", 64, 1, CRYPTO;
+    "__builtin_neon_uqi", "uint", 8, 8, ALL;
+    "__builtin_neon_uhi", "uint", 16, 4, ALL;
+    "__builtin_neon_usi", "uint", 32, 2, ALL;
+    "__builtin_neon_udi", "uint", 64, 1, ALL;
 
     (* Quadword vector types.  *)
-    "__builtin_neon_qi", "int", 8, 16;
-    "__builtin_neon_hi", "int", 16, 8;
-    "__builtin_neon_si", "int", 32, 4;
-    "__builtin_neon_di", "int", 64, 2;
-    "__builtin_neon_sf", "float", 32, 4;
-    "__builtin_neon_poly8", "poly", 8, 16;
-    "__builtin_neon_poly16", "poly", 16, 8;
-    "__builtin_neon_uqi", "uint", 8, 16;
-    "__builtin_neon_uhi", "uint", 16, 8;
-    "__builtin_neon_usi", "uint", 32, 4;
-    "__builtin_neon_udi", "uint", 64, 2
+    "__builtin_neon_qi", "int", 8, 16, ALL;
+    "__builtin_neon_hi", "int", 16, 8, ALL;
+    "__builtin_neon_si", "int", 32, 4, ALL;
+    "__builtin_neon_di", "int", 64, 2, ALL;
+    "__builtin_neon_sf", "float", 32, 4, ALL;
+    "__builtin_neon_poly8", "poly", 8, 16, ALL;
+    "__builtin_neon_poly16", "poly", 16, 8, ALL;
+    "__builtin_neon_poly64", "poly", 64, 2, CRYPTO;
+    "__builtin_neon_uqi", "uint", 8, 16, ALL;
+    "__builtin_neon_uhi", "uint", 16, 8, ALL;
+    "__builtin_neon_usi", "uint", 32, 4, ALL;
+    "__builtin_neon_udi", "uint", 64, 2, ALL
   ] in
   List.iter
-    (fun (cbase, abase, esize, enum) ->
+    (fun (cbase, abase, esize, enum, fpulevel) ->
       let attr =
         match enum with
           1 -> ""
         | _ -> Printf.sprintf "\t__attribute__ ((__vector_size__ (%d)))"
                               (esize * enum / 8) in
-      Format.printf "typedef %s %s%dx%d_t%s;@\n" cbase abase esize enum attr)
+      if fpulevel == CRYPTO then
+        Format.printf "#ifdef __ARM_FEATURE_CRYPTO\n";
+      Format.printf "typedef %s %s%dx%d_t%s;@\n" cbase abase esize enum attr;
+      if fpulevel == CRYPTO then
+        Format.printf "#endif\n";)
     typeinfo;
   Format.print_newline ();
   (* Extra types not in <stdint.h>.  *)
   Format.printf "typedef float float32_t;\n";
   Format.printf "typedef __builtin_neon_poly8 poly8_t;\n";
-  Format.printf "typedef __builtin_neon_poly16 poly16_t;\n"
+  Format.printf "typedef __builtin_neon_poly16 poly16_t;\n";
+  Format.printf "#ifdef __ARM_FEATURE_CRYPTO\n";
+  Format.printf "typedef __builtin_neon_poly64 poly64_t;\n";
+  Format.printf "typedef __builtin_neon_poly128 poly128_t;\n";
+  Format.printf "#endif\n"
 
-(* Output structs containing arrays, for load & store instructions etc.  *)
+(* Output structs containing arrays, for load & store instructions etc.
+   poly128_t is deliberately not included here because it has no array types
+   defined for it.  *)
 
 let arrtypes () =
   let typeinfo = [
-    "int", 8;    "int", 16;
-    "int", 32;   "int", 64;
-    "uint", 8;   "uint", 16;
-    "uint", 32;  "uint", 64;
-    "float", 32; "poly", 8;
-    "poly", 16
+    "int", 8, ALL;    "int", 16, ALL;
+    "int", 32, ALL;   "int", 64, ALL;
+    "uint", 8, ALL;   "uint", 16, ALL;
+    "uint", 32, ALL;  "uint", 64, ALL;
+    "float", 32, ALL; "poly", 8, ALL;
+    "poly", 16, ALL; "poly", 64, CRYPTO
   ] in
-  let writestruct elname elsize regsize arrsize =
+  let writestruct elname elsize regsize arrsize fpulevel =
     let elnum = regsize / elsize in
     let structname =
       Printf.sprintf "%s%dx%dx%d_t" elname elsize elnum arrsize in
     let sfmt = start_function () in
-    Format.printf "typedef struct %s" structname;
+    Format.printf "%stypedef struct %s"
+      (if fpulevel == CRYPTO then "#ifdef __ARM_FEATURE_CRYPTO\n" else "") structname;
     open_braceblock sfmt;
     Format.printf "%s%dx%d_t val[%d];" elname elsize elnum arrsize;
     close_braceblock sfmt;
-    Format.printf " %s;" structname;
+    Format.printf " %s;%s" structname (if fpulevel == CRYPTO then "\n#endif\n" else "");
     end_function sfmt;
   in
     for n = 2 to 4 do
       List.iter
-        (fun (elname, elsize) ->
-          writestruct elname elsize 64 n;
-          writestruct elname elsize 128 n)
+        (fun (elname, elsize, alevel) ->
+          writestruct elname elsize 64 n alevel;
+          writestruct elname elsize 128 n alevel)
         typeinfo
     done
 
@@ -365,7 +467,7 @@ let _ =
 "/* ARM NEON intrinsics include file. This file is generated automatically";
 "   using neon-gen.ml.  Please do not edit manually.";
 "";
-"   Copyright (C) 2006, 2007, 2009 Free Software Foundation, Inc.";
+"   Copyright (C) 2006-2014 Free Software Foundation, Inc.";
 "   Contributed by CodeSourcery.";
 "";
 "   This file is part of GCC.";
@@ -408,6 +510,8 @@ let _ =
   print_ops ops;
   Format.print_newline ();
   print_ops reinterp;
+  print_ops reinterpq;
+  Format.printf "%s" crypto_intrinsics;
   print_lines [
 "#ifdef __cplusplus";
 "}";

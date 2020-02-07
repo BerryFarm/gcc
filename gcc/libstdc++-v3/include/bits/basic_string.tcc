@@ -1,8 +1,6 @@
 // Components for manipulating sequences of characters -*- C++ -*-
 
-// Copyright (C) 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
-// 2006, 2007, 2008, 2009, 2010, 2011
-// Free Software Foundation, Inc.
+// Copyright (C) 1997-2014 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -80,7 +78,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       _S_construct(_InIterator __beg, _InIterator __end, const _Alloc& __a,
 		   input_iterator_tag)
       {
-#ifndef _GLIBCXX_FULLY_DYNAMIC_STRING
+#if _GLIBCXX_FULLY_DYNAMIC_STRING == 0
 	if (__beg == __end && __a == _Alloc())
 	  return _S_empty_rep()._M_refdata();
 #endif
@@ -126,7 +124,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       _S_construct(_InIterator __beg, _InIterator __end, const _Alloc& __a,
 		   forward_iterator_tag)
       {
-#ifndef _GLIBCXX_FULLY_DYNAMIC_STRING
+#if _GLIBCXX_FULLY_DYNAMIC_STRING == 0
 	if (__beg == __end && __a == _Alloc())
 	  return _S_empty_rep()._M_refdata();
 #endif
@@ -154,7 +152,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     basic_string<_CharT, _Traits, _Alloc>::
     _S_construct(size_type __n, _CharT __c, const _Alloc& __a)
     {
-#ifndef _GLIBCXX_FULLY_DYNAMIC_STRING
+#if _GLIBCXX_FULLY_DYNAMIC_STRING == 0
       if (__n == 0 && __a == _Alloc())
 	return _S_empty_rep()._M_refdata();
 #endif
@@ -231,7 +229,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     : _M_dataplus(_S_construct(__beg, __end, __a), __a)
     { }
 
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus >= 201103L
   template<typename _CharT, typename _Traits, typename _Alloc>
     basic_string<_CharT, _Traits, _Alloc>::
     basic_string(initializer_list<_CharT> __l, const _Alloc& __a)
@@ -456,7 +454,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     basic_string<_CharT, _Traits, _Alloc>::
     _M_leak_hard()
     {
-#ifndef _GLIBCXX_FULLY_DYNAMIC_STRING
+#if _GLIBCXX_FULLY_DYNAMIC_STRING == 0
       if (_M_rep() == &_S_empty_rep())
 	return;
 #endif
@@ -759,7 +757,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template<typename _CharT, typename _Traits, typename _Alloc>
     typename basic_string<_CharT, _Traits, _Alloc>::size_type
     basic_string<_CharT, _Traits, _Alloc>::
-    find(_CharT __c, size_type __pos) const
+    find(_CharT __c, size_type __pos) const _GLIBCXX_NOEXCEPT
     {
       size_type __ret = npos;
       const size_type __size = this->size();
@@ -798,7 +796,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template<typename _CharT, typename _Traits, typename _Alloc>
     typename basic_string<_CharT, _Traits, _Alloc>::size_type
     basic_string<_CharT, _Traits, _Alloc>::
-    rfind(_CharT __c, size_type __pos) const
+    rfind(_CharT __c, size_type __pos) const _GLIBCXX_NOEXCEPT
     {
       size_type __size = this->size();
       if (__size)
@@ -863,7 +861,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template<typename _CharT, typename _Traits, typename _Alloc>
     typename basic_string<_CharT, _Traits, _Alloc>::size_type
     basic_string<_CharT, _Traits, _Alloc>::
-    find_first_not_of(_CharT __c, size_type __pos) const
+    find_first_not_of(_CharT __c, size_type __pos) const _GLIBCXX_NOEXCEPT
     {
       for (; __pos < this->size(); ++__pos)
 	if (!traits_type::eq(_M_data()[__pos], __c))
@@ -895,7 +893,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template<typename _CharT, typename _Traits, typename _Alloc>
     typename basic_string<_CharT, _Traits, _Alloc>::size_type
     basic_string<_CharT, _Traits, _Alloc>::
-    find_last_not_of(_CharT __c, size_type __pos) const
+    find_last_not_of(_CharT __c, size_type __pos) const _GLIBCXX_NOEXCEPT
     {
       size_type __size = this->size();
       if (__size)

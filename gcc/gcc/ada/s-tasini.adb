@@ -6,7 +6,7 @@
 --                                                                          --
 --                                  B o d y                                 --
 --                                                                          --
---         Copyright (C) 1992-2009, Free Software Foundation, Inc.          --
+--         Copyright (C) 1992-2013, Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -598,7 +598,7 @@ package body System.Tasking.Initialization is
    -- Undefer_Abort --
    -------------------
 
-   --  Precondition : Self does not hold any locks!
+   --  Precondition : Self does not hold any locks
 
    --  Undefer_Abort is called on any abort completion point (aka.
    --  synchronization point). It performs the following actions if they
@@ -682,9 +682,7 @@ package body System.Tasking.Initialization is
          --  between the expander and the run time, we may end up with
          --  Self_ID.Deferral_Level being equal to zero, when called from
          --  the procedure created by the expander that corresponds to a
-         --  task body.
-
-         --  In this case, there's nothing to be done
+         --  task body. In this case, there's nothing to be done.
 
          --  See related code in System.Tasking.Stages.Create_Task resetting
          --  Deferral_Level when System.Restrictions.Abort_Allowed is False.

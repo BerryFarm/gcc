@@ -1,0 +1,4 @@
+LIB2ADD = $(srcdir)/config/sh/divdi.c
+
+CRTSTUFF_T_CFLAGS = -fno-omit-frame-pointer -fpic -DCRTSTUFFS_O
+HOST_LIBGCC2_CFLAGS += -fexceptions

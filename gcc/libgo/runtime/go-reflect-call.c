@@ -5,18 +5,44 @@
    license that can be found in the LICENSE file.  */
 
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 
-#include "ffi.h"
-
+#include "runtime.h"
 #include "go-alloc.h"
 #include "go-assert.h"
 #include "go-type.h"
-#include "runtime.h"
 
-/* Forward declaration.  */
+#ifdef USE_LIBFFI
 
-static ffi_type *go_type_to_ffi (const struct __go_type_descriptor *);
+#include "ffi.h"
+
+/* The functions in this file are only called from reflect_call.  As
+   reflect_call calls a libffi function, which will be compiled
+   without -fsplit-stack, it will always run with a large stack.  */
+
+static ffi_type *go_array_to_ffi (const struct __go_array_type *)
+  __attribute__ ((no_split_stack));
+static ffi_type *go_slice_to_ffi (const struct __go_slice_type *)
+  __attribute__ ((no_split_stack));
+static ffi_type *go_struct_to_ffi (const struct __go_struct_type *)
+  __attribute__ ((no_split_stack));
+static ffi_type *go_string_to_ffi (void) __attribute__ ((no_split_stack));
+static ffi_type *go_interface_to_ffi (void) __attribute__ ((no_split_stack));
+static ffi_type *go_complex_to_ffi (ffi_type *)
+  __attribute__ ((no_split_stack, unused));
+static ffi_type *go_type_to_ffi (const struct __go_type_descriptor *)
+  __attribute__ ((no_split_stack));
+static ffi_type *go_func_return_ffi (const struct __go_func_type *)
+  __attribute__ ((no_split_stack));
+static void go_func_to_cif (const struct __go_func_type *, _Bool, _Bool,
+			    ffi_cif *)
+  __attribute__ ((no_split_stack));
+static size_t go_results_size (const struct __go_func_type *)
+  __attribute__ ((no_split_stack));
+static void go_set_results (const struct __go_func_type *, unsigned char *,
+			    void **)
+  __attribute__ ((no_split_stack));
 
 /* Return an ffi_type for a Go array type.  The libffi library does
    not have any builtin support for passing arrays as values.  We work
@@ -31,7 +57,6 @@ go_array_to_ffi (const struct __go_array_type *descriptor)
   uintptr_t i;
 
   ret = (ffi_type *) __go_alloc (sizeof (ffi_type));
-  __builtin_memset (ret, 0, sizeof (ffi_type));
   ret->type = FFI_TYPE_STRUCT;
   len = descriptor->__len;
   ret->elements = (ffi_type **) __go_alloc ((len + 1) * sizeof (ffi_type *));
@@ -50,14 +75,15 @@ go_slice_to_ffi (
     const struct __go_slice_type *descriptor __attribute__ ((unused)))
 {
   ffi_type *ret;
+  ffi_type *ffi_intgo;
 
   ret = (ffi_type *) __go_alloc (sizeof (ffi_type));
-  __builtin_memset (ret, 0, sizeof (ffi_type));
   ret->type = FFI_TYPE_STRUCT;
   ret->elements = (ffi_type **) __go_alloc (4 * sizeof (ffi_type *));
   ret->elements[0] = &ffi_type_pointer;
-  ret->elements[1] = &ffi_type_sint;
-  ret->elements[2] = &ffi_type_sint;
+  ffi_intgo = sizeof (intgo) == 4 ? &ffi_type_sint32 : &ffi_type_sint64;
+  ret->elements[1] = ffi_intgo;
+  ret->elements[2] = ffi_intgo;
   ret->elements[3] = NULL;
   return ret;
 }
@@ -72,10 +98,12 @@ go_struct_to_ffi (const struct __go_struct_type *descriptor)
   const struct __go_struct_field *fields;
   int i;
 
-  ret = (ffi_type *) __go_alloc (sizeof (ffi_type));
-  __builtin_memset (ret, 0, sizeof (ffi_type));
-  ret->type = FFI_TYPE_STRUCT;
   field_count = descriptor->__fields.__count;
+  if (field_count == 0) {
+    return &ffi_type_void;
+  }
+  ret = (ffi_type *) __go_alloc (sizeof (ffi_type));
+  ret->type = FFI_TYPE_STRUCT;
   fields = (const struct __go_struct_field *) descriptor->__fields.__values;
   ret->elements = (ffi_type **) __go_alloc ((field_count + 1)
 					    * sizeof (ffi_type *));
@@ -85,19 +113,21 @@ go_struct_to_ffi (const struct __go_struct_type *descriptor)
   return ret;
 }
 
-/* Return an ffi_type for a Go string type.  This describes the
-   __go_string struct.  */
+/* Return an ffi_type for a Go string type.  This describes the String
+   struct.  */
 
 static ffi_type *
 go_string_to_ffi (void)
 {
   ffi_type *ret;
+  ffi_type *ffi_intgo;
 
   ret = (ffi_type *) __go_alloc (sizeof (ffi_type));
   ret->type = FFI_TYPE_STRUCT;
   ret->elements = (ffi_type **) __go_alloc (3 * sizeof (ffi_type *));
   ret->elements[0] = &ffi_type_pointer;
-  ret->elements[1] = &ffi_type_sint;
+  ffi_intgo = sizeof (intgo) == 4 ? &ffi_type_sint32 : &ffi_type_sint64;
+  ret->elements[1] = ffi_intgo;
   ret->elements[2] = NULL;
   return ret;
 }
@@ -141,7 +171,7 @@ go_complex_to_ffi (ffi_type *float_type)
 static ffi_type *
 go_type_to_ffi (const struct __go_type_descriptor *descriptor)
 {
-  switch (descriptor->__code)
+  switch (descriptor->__code & GO_CODE_MASK)
     {
     case GO_BOOL:
       if (sizeof (_Bool) == 1)
@@ -158,13 +188,23 @@ go_type_to_ffi (const struct __go_type_descriptor *descriptor)
 	return &ffi_type_double;
       abort ();
     case GO_COMPLEX64:
+#ifdef __alpha__
+      runtime_throw("the libffi library does not support Complex64 type with "
+		    "reflect.Call or runtime.SetFinalizer");
+#else
       if (sizeof (float) == 4)
 	return go_complex_to_ffi (&ffi_type_float);
       abort ();
+#endif
     case GO_COMPLEX128:
+#ifdef __alpha__
+      runtime_throw("the libffi library does not support Complex128 type with "
+		    "reflect.Call or runtime.SetFinalizer");
+#else
       if (sizeof (double) == 8)
 	return go_complex_to_ffi (&ffi_type_double);
       abort ();
+#endif
     case GO_INT16:
       return &ffi_type_sint16;
     case GO_INT32:
@@ -174,7 +214,7 @@ go_type_to_ffi (const struct __go_type_descriptor *descriptor)
     case GO_INT8:
       return &ffi_type_sint8;
     case GO_INT:
-      return &ffi_type_sint;
+      return sizeof (intgo) == 4 ? &ffi_type_sint32 : &ffi_type_sint64;
     case GO_UINT16:
       return &ffi_type_uint16;
     case GO_UINT32:
@@ -184,7 +224,7 @@ go_type_to_ffi (const struct __go_type_descriptor *descriptor)
     case GO_UINT8:
       return &ffi_type_uint8;
     case GO_UINT:
-      return &ffi_type_uint;
+      return sizeof (uintgo) == 4 ? &ffi_type_uint32 : &ffi_type_uint64;
     case GO_UINTPTR:
       if (sizeof (void *) == 2)
 	return &ffi_type_uint16;
@@ -234,10 +274,23 @@ go_func_return_ffi (const struct __go_func_type *func)
   types = (const struct __go_type_descriptor **) func->__out.__values;
 
   if (count == 1)
-    return go_type_to_ffi (types[0]);
+    {
+
+#if defined (__i386__) && !defined (__x86_64__)
+      /* FFI does not support complex types.  On 32-bit x86, a
+	 complex64 will be returned in %eax/%edx.  We normally tell
+	 FFI that a complex64 is a struct of two floats.  On 32-bit
+	 x86 a struct of two floats is returned via a hidden first
+	 pointer parameter.  Fortunately we can make everything work
+	 by pretending that complex64 is int64.  */
+      if ((types[0]->__code & GO_CODE_MASK) == GO_COMPLEX64)
+	return &ffi_type_sint64;
+#endif
+
+      return go_type_to_ffi (types[0]);
+    }
 
   ret = (ffi_type *) __go_alloc (sizeof (ffi_type));
-  __builtin_memset (ret, 0, sizeof (ffi_type));
   ret->type = FFI_TYPE_STRUCT;
   ret->elements = (ffi_type **) __go_alloc ((count + 1) * sizeof (ffi_type *));
   for (i = 0; i < count; ++i)
@@ -251,7 +304,7 @@ go_func_return_ffi (const struct __go_func_type *func)
 
 static void
 go_func_to_cif (const struct __go_func_type *func, _Bool is_interface,
-		ffi_cif *cif)
+		_Bool is_method, ffi_cif *cif)
 {
   int num_params;
   const struct __go_type_descriptor **in_types;
@@ -268,10 +321,19 @@ go_func_to_cif (const struct __go_func_type *func, _Bool is_interface,
 
   num_args = num_params + (is_interface ? 1 : 0);
   args = (ffi_type **) __go_alloc (num_args * sizeof (ffi_type *));
+  i = 0;
+  off = 0;
   if (is_interface)
-    args[0] = &ffi_type_pointer;
-  off = is_interface ? 1 : 0;
-  for (i = 0; i < num_params; ++i)
+    {
+      args[0] = &ffi_type_pointer;
+      off = 1;
+    }
+  else if (is_method)
+    {
+      args[0] = &ffi_type_pointer;
+      i = 1;
+    }
+  for (; i < num_params; ++i)
     args[i + off] = go_type_to_ffi (in_types[i]);
 
   rettype = go_func_return_ffi (func);
@@ -297,6 +359,28 @@ go_results_size (const struct __go_func_type *func)
     return 0;
 
   types = (const struct __go_type_descriptor **) func->__out.__values;
+
+  /* A single integer return value is always promoted to a full
+     word.  */
+  if (count == 1)
+    {
+      switch (types[0]->__code & GO_CODE_MASK)
+	{
+	case GO_BOOL:
+	case GO_INT8:
+	case GO_INT16:
+	case GO_INT32:
+	case GO_UINT8:
+	case GO_UINT16:
+	case GO_UINT32:
+	case GO_INT:
+	case GO_UINT:
+	  return sizeof (ffi_arg);
+
+	default:
+	  break;
+	}
+    }
 
   off = 0;
   maxalign = 0;
@@ -334,6 +418,81 @@ go_set_results (const struct __go_func_type *func, unsigned char *call_result,
 
   types = (const struct __go_type_descriptor **) func->__out.__values;
 
+  /* A single integer return value is always promoted to a full
+     word.  */
+  if (count == 1)
+    {
+      switch (types[0]->__code & GO_CODE_MASK)
+	{
+	case GO_BOOL:
+	case GO_INT8:
+	case GO_INT16:
+	case GO_INT32:
+	case GO_UINT8:
+	case GO_UINT16:
+	case GO_UINT32:
+	case GO_INT:
+	case GO_UINT:
+	  {
+	    union
+	    {
+	      unsigned char buf[sizeof (ffi_arg)];
+	      ffi_arg v;
+	    } u;
+	    ffi_arg v;
+
+	    __builtin_memcpy (&u.buf, call_result, sizeof (ffi_arg));
+	    v = u.v;
+
+	    switch (types[0]->__size)
+	      {
+	      case 1:
+		{
+		  uint8_t b;
+
+		  b = (uint8_t) v;
+		  __builtin_memcpy (results[0], &b, 1);
+		}
+		break;
+
+	      case 2:
+		{
+		  uint16_t s;
+
+		  s = (uint16_t) v;
+		  __builtin_memcpy (results[0], &s, 2);
+		}
+		break;
+
+	      case 4:
+		{
+		  uint32_t w;
+
+		  w = (uint32_t) v;
+		  __builtin_memcpy (results[0], &w, 4);
+		}
+		break;
+
+	      case 8:
+		{
+		  uint64_t d;
+
+		  d = (uint64_t) v;
+		  __builtin_memcpy (results[0], &d, 8);
+		}
+		break;
+
+	      default:
+		abort ();
+	      }
+	  }
+	  return;
+
+	default:
+	  break;
+	}
+    }
+
   off = 0;
   for (i = 0; i < count; ++i)
     {
@@ -349,22 +508,37 @@ go_set_results (const struct __go_func_type *func, unsigned char *call_result,
 }
 
 /* Call a function.  The type of the function is FUNC_TYPE, and the
-   address is FUNC_ADDR.  PARAMS is an array of parameter addresses.
-   RESULTS is an array of result addresses.  */
+   closure is FUNC_VAL.  PARAMS is an array of parameter addresses.
+   RESULTS is an array of result addresses.
+
+   If IS_INTERFACE is true this is a call to an interface method and
+   the first argument is the receiver, which is always a pointer.
+   This argument, the receiver, is not described in FUNC_TYPE.
+
+   If IS_METHOD is true this is a call to a method expression.  The
+   first argument is the receiver.  It is described in FUNC_TYPE, but
+   regardless of FUNC_TYPE, it is passed as a pointer.
+
+   If neither IS_INTERFACE nor IS_METHOD is true then we are calling a
+   function indirectly, and we must pass a closure pointer via
+   __go_set_closure.  The pointer to pass is simply FUNC_VAL.  */
 
 void
-reflect_call (const struct __go_func_type *func_type, const void *func_addr,
-	      _Bool is_interface, void **params, void **results)
+reflect_call (const struct __go_func_type *func_type, FuncVal *func_val,
+	      _Bool is_interface, _Bool is_method, void **params,
+	      void **results)
 {
   ffi_cif cif;
   unsigned char *call_result;
 
-  __go_assert (func_type->__common.__code == GO_FUNC);
-  go_func_to_cif (func_type, is_interface, &cif);
+  __go_assert ((func_type->__common.__code & GO_CODE_MASK) == GO_FUNC);
+  go_func_to_cif (func_type, is_interface, is_method, &cif);
 
   call_result = (unsigned char *) malloc (go_results_size (func_type));
 
-  ffi_call (&cif, func_addr, call_result, params);
+  if (!is_interface && !is_method)
+    __go_set_closure (func_val);
+  ffi_call (&cif, func_val->fn, call_result, params);
 
   /* Some day we may need to free result values if RESULTS is
      NULL.  */
@@ -373,3 +547,20 @@ reflect_call (const struct __go_func_type *func_type, const void *func_addr,
 
   free (call_result);
 }
+
+#else /* !defined(USE_LIBFFI) */
+
+void
+reflect_call (const struct __go_func_type *func_type __attribute__ ((unused)),
+	      FuncVal *func_val __attribute__ ((unused)),
+	      _Bool is_interface __attribute__ ((unused)),
+	      _Bool is_method __attribute__ ((unused)),
+	      void **params __attribute__ ((unused)),
+	      void **results __attribute__ ((unused)))
+{
+  /* Without FFI there is nothing we can do.  */
+  runtime_throw("libgo built without FFI does not support "
+		"reflect.Call or runtime.SetFinalizer");
+}
+
+#endif /* !defined(USE_LIBFFI) */

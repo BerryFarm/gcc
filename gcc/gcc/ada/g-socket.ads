@@ -6,25 +6,23 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---                     Copyright (C) 2001-2010, AdaCore                     --
+--                     Copyright (C) 2001-2013, AdaCore                     --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
--- ware  Foundation;  either version 2,  or (at your option) any later ver- --
+-- ware  Foundation;  either version 3,  or (at your option) any later ver- --
 -- sion.  GNAT is distributed in the hope that it will be useful, but WITH- --
 -- OUT ANY WARRANTY;  without even the  implied warranty of MERCHANTABILITY --
--- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
--- for  more details.  You should have  received  a copy of the GNU General --
--- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
--- Boston, MA 02110-1301, USA.                                              --
+-- or FITNESS FOR A PARTICULAR PURPOSE.                                     --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
+-- As a special exception under Section 7 of GPL version 3, you are granted --
+-- additional permissions described in the GCC Runtime Library Exception,   --
+-- version 3.1, as published by the Free Software Foundation.               --
+--                                                                          --
+-- You should have received a copy of the GNU General Public License and    --
+-- a copy of the GCC Runtime Library Exception along with this program;     --
+-- see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see    --
+-- <http://www.gnu.org/licenses/>.                                          --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -109,8 +107,6 @@ package GNAT.Sockets is
    --        Channel  : Stream_Access;
 
    --     begin
-   --        accept Start;
-   --
    --        --  Get an Internet address of a host (here the local host name).
    --        --  Note that a host can have several addresses. Here we get
    --        --  the first one which is supposed to be the official one.
@@ -146,6 +142,8 @@ package GNAT.Sockets is
    --        --  can be accepted. The returned Socket is a new socket that
    --        --  represents the server side of the connection. Server remains
    --        --  available to receive further connections.
+
+   --        accept Start;
 
    --        Accept_Socket (Server, Socket, Address);
 
@@ -280,7 +278,7 @@ package GNAT.Sockets is
    --           Socket_Level,
    --           (Reuse_Address, True));
 
-   --        --  Force Pong to block
+   --        --  Force Ping to block
 
    --        delay 0.2;
 
@@ -429,14 +427,14 @@ package GNAT.Sockets is
 
    --  Timeval_Duration is a subtype of Standard.Duration because the full
    --  range of Standard.Duration cannot be represented in the equivalent C
-   --  structure. Moreover, negative values are not allowed to avoid system
-   --  incompatibilities.
+   --  structure (struct timeval). Moreover, negative values are not allowed
+   --  to avoid system incompatibilities.
 
    Immediate : constant Duration := 0.0;
 
-   Timeval_Forever : constant := 2.0 ** (SOSC.SIZEOF_tv_sec * 8 - 1) - 1.0;
-   Forever         : constant Duration :=
-                       Duration'Min (Duration'Last, Timeval_Forever);
+   Forever : constant Duration :=
+               Duration'Min (Duration'Last, 1.0 * SOSC.MAX_tv_sec);
+   --  Largest possible Duration that is also a valid value for struct timeval
 
    subtype Timeval_Duration is Duration range Immediate .. Forever;
 
@@ -818,7 +816,8 @@ package GNAT.Sockets is
    --  connections, creates a new connected socket with mostly the same
    --  properties as Server, and allocates a new socket. The returned Address
    --  is filled in with the address of the connection. Raises Socket_Error on
-   --  error.
+   --  error. Note: if Server is a non-blocking socket, whether or not this
+   --  aspect is inherited by Socket is platform-dependent.
 
    procedure Accept_Socket
      (Server   : Socket_Type;
@@ -860,7 +859,9 @@ package GNAT.Sockets is
    --  whether the operation completed successfully, timed out, or was aborted.
    --  If Selector is not null, the designated selector is used to wait for the
    --  socket to become available, else a private selector object is created
-   --  by this procedure and destroyed before it returns.
+   --  by this procedure and destroyed before it returns. If Timeout is 0.0,
+   --  no attempt is made to detect whether the connection has succeeded; it
+   --  is up to the user to determine this using Check_Selector later on.
 
    procedure Control_Socket
      (Socket  : Socket_Type;
@@ -978,6 +979,17 @@ package GNAT.Sockets is
    --  Transmit data gathered from the set of vector elements Vector to a
    --  socket. Count is set to the count of transmitted stream elements. Flags
    --  allow control over transmission.
+
+   procedure Set_Close_On_Exec
+     (Socket        : Socket_Type;
+      Close_On_Exec : Boolean;
+      Status        : out Boolean);
+   --  When Close_On_Exec is True, mark Socket to be closed automatically when
+   --  a new program is executed by the calling process (i.e. prevent Socket
+   --  from being inherited by child processes). When Close_On_Exec is False,
+   --  mark Socket to not be closed on exec (i.e. allow it to be inherited).
+   --  Status is False if the operation could not be performed, or is not
+   --  supported on the target platform.
 
    procedure Set_Socket_Option
      (Socket : Socket_Type;
@@ -1148,7 +1160,6 @@ private
             R_Sig_Socket : Socket_Type := No_Socket;
             W_Sig_Socket : Socket_Type := No_Socket;
             --  Signalling sockets used to abort a select operation
-
       end case;
    end record;
 
@@ -1236,10 +1247,10 @@ private
    end record;
 
    type Service_Entry_Type (Aliases_Length : Natural) is record
-      Official  : Name_Type;
-      Aliases   : Name_Array (1 .. Aliases_Length);
-      Port      : Port_Type;
-      Protocol  : Name_Type;
+      Official : Name_Type;
+      Aliases  : Name_Array (1 .. Aliases_Length);
+      Port     : Port_Type;
+      Protocol : Name_Type;
    end record;
 
    type Request_Flag_Type is mod 2 ** 8;

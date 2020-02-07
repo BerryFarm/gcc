@@ -1,6 +1,5 @@
 /* Definitions of target machine for GNU compiler. NEC V850 series
-   Copyright (C) 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
-   2007, 2008, 2009, 2010  Free Software Foundation, Inc.
+   Copyright (C) 1996-2014 Free Software Foundation, Inc.
    Contributed by Jeff Law (law@cygnus.com).
 
    This file is part of GCC.
@@ -15,8 +14,13 @@
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
 
-   You should have received a copy of the GNU General Public License
-   along with GCC; see the file COPYING3.  If not see
+   Under Section 7 of GPL version 3, you are granted additional
+   permissions described in the GCC Runtime Library Exception, version
+   3.1, as published by the Free Software Foundation.
+
+   You should have received a copy of the GNU General Public License and
+   a copy of the GCC Runtime Library Exception along with this program;
+   see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
    <http://www.gnu.org/licenses/>.  */
 
 #ifndef GCC_V850_H
@@ -38,7 +42,7 @@ extern GTY(()) rtx v850_compare_op1;
 #define TARGET_CPU_v850e1	3
 #define TARGET_CPU_v850e2	4
 #define TARGET_CPU_v850e2v3	5
-
+#define TARGET_CPU_v850e3v5	6
 
 #ifndef TARGET_CPU_DEFAULT
 #define TARGET_CPU_DEFAULT	TARGET_CPU_generic
@@ -47,7 +51,6 @@ extern GTY(()) rtx v850_compare_op1;
 #define MASK_DEFAULT            MASK_V850
 #define SUBTARGET_ASM_SPEC 	"%{!mv*:-mv850}"
 #define SUBTARGET_CPP_SPEC 	"%{!mv*:-D__v850__}"
-#define TARGET_VERSION 		fprintf (stderr, " (NEC V850)");
 
 /* Choose which processor will be the default.
    We must pass a -mv850xx option to the assembler if no explicit -mv* option
@@ -59,8 +62,6 @@ extern GTY(()) rtx v850_compare_op1;
 #define SUBTARGET_ASM_SPEC 	"%{!mv*:-mv850e}"
 #undef  SUBTARGET_CPP_SPEC
 #define SUBTARGET_CPP_SPEC 	"%{!mv*:-D__v850e__}"
-#undef  TARGET_VERSION
-#define TARGET_VERSION 		fprintf (stderr, " (NEC V850E)");
 #endif
 
 #if TARGET_CPU_DEFAULT == TARGET_CPU_v850e1
@@ -70,8 +71,6 @@ extern GTY(()) rtx v850_compare_op1;
 #define SUBTARGET_ASM_SPEC	"%{!mv*:-mv850e1}"
 #undef  SUBTARGET_CPP_SPEC
 #define SUBTARGET_CPP_SPEC	"%{!mv*:-D__v850e1__} %{mv850e1:-D__v850e1__}"
-#undef  TARGET_VERSION
-#define TARGET_VERSION		fprintf (stderr, " (NEC V850E1)");
 #endif
 
 #if TARGET_CPU_DEFAULT == TARGET_CPU_v850e2
@@ -81,8 +80,6 @@ extern GTY(()) rtx v850_compare_op1;
 #define SUBTARGET_ASM_SPEC 	"%{!mv*:-mv850e2}"
 #undef  SUBTARGET_CPP_SPEC
 #define SUBTARGET_CPP_SPEC 	"%{!mv*:-D__v850e2__} %{mv850e2:-D__v850e2__}"
-#undef  TARGET_VERSION
-#define TARGET_VERSION 		fprintf (stderr, " (NEC V850E2)");
 #endif
 
 #if TARGET_CPU_DEFAULT == TARGET_CPU_v850e2v3
@@ -92,56 +89,75 @@ extern GTY(()) rtx v850_compare_op1;
 #define SUBTARGET_ASM_SPEC	"%{!mv*:-mv850e2v3}"
 #undef  SUBTARGET_CPP_SPEC
 #define SUBTARGET_CPP_SPEC	"%{!mv*:-D__v850e2v3__} %{mv850e2v3:-D__v850e2v3__}"
-#undef  TARGET_VERSION
-#define TARGET_VERSION		fprintf (stderr, " (NEC V850E2V3)");
 #endif
 
-#define TARGET_V850E2_ALL      (TARGET_V850E2 || TARGET_V850E2V3) 
+#if TARGET_CPU_DEFAULT == TARGET_CPU_v850e3v5
+#undef  MASK_DEFAULT
+#define MASK_DEFAULT            MASK_V850E3V5
+#undef  SUBTARGET_ASM_SPEC
+#define SUBTARGET_ASM_SPEC	"%{!mv*:-mv850e3v5}"
+#undef  SUBTARGET_CPP_SPEC
+#define SUBTARGET_CPP_SPEC	"%{!mv*:-D__v850e3v5__} %{mv850e3v5:-D__v850e3v5__}"
+#undef  TARGET_VERSION
+#define TARGET_VERSION		fprintf (stderr, " (Renesas V850E3V5)");
+#endif
 
-#define ASM_SPEC "%{mv850es:-mv850e1}%{!mv850es:%{mv*:-mv%*}}"
+#define TARGET_V850E3V5_UP ((TARGET_V850E3V5))     
+#define TARGET_V850E2V3_UP ((TARGET_V850E2V3) || TARGET_V850E3V5_UP)
+#define TARGET_V850E2_UP   ((TARGET_V850E2)   || TARGET_V850E2V3_UP)
+#define TARGET_V850E_UP    ((TARGET_V850E)    || TARGET_V850E2_UP)
+#define TARGET_ALL         ((TARGET_V850)     || TARGET_V850E_UP)
+
+#define ASM_SPEC "%{m850es:-mv850e1}%{!mv850es:%{mv*:-mv%*}} \
+%{mrelax:-mrelax} \
+%{m8byte-align:-m8byte-align} \
+%{mgcc-abi:-mgcc-abi}"
+
+#define LINK_SPEC "%{mgcc-abi:-m v850}"
+
 #define CPP_SPEC "\
+  %{mv850e3v5:-D__v850e3v5__} \
   %{mv850e2v3:-D__v850e2v3__} \
   %{mv850e2:-D__v850e2__} \
   %{mv850es:-D__v850e1__} \
   %{mv850e1:-D__v850e1__} \
+  %{mv850e:-D__v850e__} \
   %{mv850:-D__v850__} \
-  %(subtarget_cpp_spec)" \
-  " %{mep:-D__EP__}"
+  %(subtarget_cpp_spec) \
+  %{mep:-D__EP__}"
 
 #define EXTRA_SPECS \
  { "subtarget_asm_spec", SUBTARGET_ASM_SPEC }, \
  { "subtarget_cpp_spec", SUBTARGET_CPP_SPEC } 
 
-/* Names to predefine in the preprocessor for this target machine.  */
-#define TARGET_CPU_CPP_BUILTINS() do {		\
-  builtin_define( "__v851__" );                        \
-  builtin_define( "__v850" );			\
-  builtin_assert( "machine=v850" );		\
-  builtin_assert( "cpu=v850" );			\
-  if (TARGET_EP)				\
-    builtin_define ("__EP__");			\
-} while(0)
 
-#define MASK_CPU (MASK_V850 | MASK_V850E)
+/* Macro to decide when FPU instructions can be used.  */
+#define TARGET_USE_FPU  (TARGET_V850E2V3_UP && ! TARGET_SOFT_FLOAT)
 
-/* Information about the various small memory areas.  */
-struct small_memory_info {
-  const char *name;
-  long max;
-  long physical_max;
-};
+#define TARGET_CPU_CPP_BUILTINS()		\
+  do						\
+    {						\
+      builtin_define( "__v851__" );		\
+      builtin_define( "__v850" );		\
+      builtin_define( "__v850__" );		\
+      builtin_assert( "machine=v850" );		\
+      builtin_assert( "cpu=v850" );		\
+      if (TARGET_EP)				\
+	builtin_define ("__EP__");		\
+      if (TARGET_GCC_ABI)			\
+	builtin_define ("__V850_GCC_ABI__");	\
+      else					\
+	builtin_define ("__V850_RH850_ABI__");	\
+      if (! TARGET_DISABLE_CALLT)		\
+	builtin_define ("__V850_CALLT__");	\
+      if (TARGET_8BYTE_ALIGN)			\
+	builtin_define ("__V850_8BYTE_ALIGN__");\
+      builtin_define (TARGET_USE_FPU ?		\
+		      "__FPU_OK__" : "__NO_FPU__");\
+    }						\
+  while(0)
 
-enum small_memory_type {
-  /* tiny data area, using EP as base register */
-  SMALL_MEMORY_TDA = 0,
-  /* small data area using dp as base register */
-  SMALL_MEMORY_SDA,
-  /* zero data area using r0 as base register */
-  SMALL_MEMORY_ZDA,
-  SMALL_MEMORY_max
-};
-
-extern struct small_memory_info small_memory[(int)SMALL_MEMORY_max];
+#define MASK_CPU (MASK_V850 | MASK_V850E | MASK_V850E1 | MASK_V850E2 | MASK_V850E2V3 | MASK_V850E3V5)
 
 /* Target machine storage layout */
 
@@ -180,20 +196,20 @@ extern struct small_memory_info small_memory[(int)SMALL_MEMORY_max];
 #define PARM_BOUNDARY		32
 
 /* The stack goes in 32-bit lumps.  */
-#define STACK_BOUNDARY 		32
+#define STACK_BOUNDARY 		BIGGEST_ALIGNMENT
 
 /* Allocation boundary (in *bits*) for the code of a function.
    16 is the minimum boundary; 32 would give better performance.  */
-#define FUNCTION_BOUNDARY 16
+#define FUNCTION_BOUNDARY 	(((! TARGET_GCC_ABI) || optimize_size) ? 16 : 32)
 
 /* No data type wants to be aligned rounder than this.  */
-#define BIGGEST_ALIGNMENT	32
+#define BIGGEST_ALIGNMENT	(TARGET_8BYTE_ALIGN ? 64 : 32)
 
 /* Alignment of field after `int : 0' in a structure.  */
 #define EMPTY_FIELD_BOUNDARY 32
 
 /* No structure field wants to be aligned rounder than this.  */
-#define BIGGEST_FIELD_ALIGNMENT 32
+#define BIGGEST_FIELD_ALIGNMENT BIGGEST_ALIGNMENT
 
 /* Define this if move instructions will actually fail to work
    when given unaligned data.  */
@@ -318,20 +334,15 @@ extern struct small_memory_info small_memory[(int)SMALL_MEMORY_max];
    
 enum reg_class
 {
-  NO_REGS, GENERAL_REGS, EVEN_REGS, ALL_REGS, LIM_REG_CLASSES
+  NO_REGS, EVEN_REGS, GENERAL_REGS, ALL_REGS, LIM_REG_CLASSES
 };
 
 #define N_REG_CLASSES (int) LIM_REG_CLASSES
 
-#define IRA_COVER_CLASSES		\
-{					\
-  GENERAL_REGS, LIM_REG_CLASSES		\
-}
-
 /* Give names of register classes as strings for dump file.  */
 
 #define REG_CLASS_NAMES \
-{ "NO_REGS", "GENERAL_REGS", "EVEN_REGS", "ALL_REGS", "LIM_REGS" }
+{ "NO_REGS", "EVEN_REGS", "GENERAL_REGS", "ALL_REGS", "LIM_REGS" }
 
 /* Define which registers fit in which classes.
    This is an initializer for a vector of HARD_REG_SET
@@ -340,8 +351,8 @@ enum reg_class
 #define REG_CLASS_CONTENTS                     \
 {                                              \
   { 0x00000000,0x0 }, /* NO_REGS      */       \
-  { 0xffffffff,0x0 }, /* GENERAL_REGS */       \
   { 0x55555554,0x0 }, /* EVEN_REGS */          \
+  { 0xfffffffe,0x0 }, /* GENERAL_REGS */       \
   { 0xffffffff,0x0 }, /* ALL_REGS      */      \
 }
 
@@ -363,7 +374,8 @@ enum reg_class
    They give nonzero only if REGNO is a hard reg of the suitable class
    or a pseudo reg currently allocated to a suitable hard reg.
    Since they use reg_renumber, they are safe only once reg_renumber
-   has been allocated, which happens in local-alloc.c.  */
+   has been allocated, which happens in reginfo.c during register
+   allocation.  */
  
 #define REGNO_OK_FOR_BASE_P(regno)             \
   (((regno) < FIRST_PSEUDO_REGISTER            \
@@ -372,12 +384,6 @@ enum reg_class
    || reg_renumber[regno] >= 0)
 
 #define REGNO_OK_FOR_INDEX_P(regno) 0
-
-/* Return the maximum number of consecutive registers
-   needed to represent mode MODE in a register of class CLASS.  */
-
-#define CLASS_MAX_NREGS(CLASS, MODE)	\
-  ((GET_MODE_SIZE (MODE) + UNITS_PER_WORD - 1) / UNITS_PER_WORD)
 
 /* Convenience wrappers around insn_const_int_ok_for_constraint.  */
 
@@ -395,7 +401,8 @@ enum reg_class
   insn_const_int_ok_for_constraint (VALUE, CONSTRAINT_N)
 #define CONST_OK_FOR_O(VALUE) \
   insn_const_int_ok_for_constraint (VALUE, CONSTRAINT_O)
-
+#define CONST_OK_FOR_W(VALUE) \
+  insn_const_int_ok_for_constraint (VALUE, CONSTRAINT_W)
 
 /* Stack layout; function entry, exit and calling.  */
 
@@ -523,14 +530,14 @@ enum reg_class
    such as FUNCTION_ARG to determine where the next arg should go.  */
 
 #define CUMULATIVE_ARGS struct cum_arg
-struct cum_arg { int nbytes; int anonymous_args; };
+struct cum_arg { int nbytes; };
 
 /* Initialize a variable CUM of type CUMULATIVE_ARGS
    for a call to a function whose data type is FNTYPE.
    For a library call, FNTYPE is 0.  */
 
 #define INIT_CUMULATIVE_ARGS(CUM, FNTYPE, LIBNAME, INDIRECT, N_NAMED_ARGS) \
- ((CUM).nbytes = 0, (CUM).anonymous_args = 0)
+  do { (CUM).nbytes = 0; } while (0)
 
 /* When a parameter is passed in a register, stack space is still
    allocated for it.  */
@@ -666,17 +673,6 @@ do {									\
 } while (0)
 
 
-/* Nonzero if the constant value X is a legitimate general operand.
-   It is given that X satisfies CONSTANT_P or is a CONST_DOUBLE.  */
-
-#define LEGITIMATE_CONSTANT_P(X)					\
-  (GET_CODE (X) == CONST_DOUBLE						\
-   || !(GET_CODE (X) == CONST						\
-	&& GET_CODE (XEXP (X, 0)) == PLUS				\
-	&& GET_CODE (XEXP (XEXP (X, 0), 0)) == SYMBOL_REF		\
-	&& GET_CODE (XEXP (XEXP (X, 0), 1)) == CONST_INT		\
-	&& ! CONST_OK_FOR_K (INTVAL (XEXP (XEXP (X, 0), 1)))))
-
 /* Given a comparison code (EQ, NE, etc.) and the first operand of a COMPARE,
    return the mode to be used for the comparison.
 
@@ -747,10 +743,6 @@ typedef enum
 
 #undef  USER_LABEL_PREFIX
 #define USER_LABEL_PREFIX "_"
-
-#define OUTPUT_ADDR_CONST_EXTRA(FILE, X, FAIL)  \
-  if (! v850_output_addr_const_extra (FILE, X)) \
-     goto FAIL
 
 /* This says how to output the assembler to define a global
    uninitialized but not common symbol.  */
@@ -827,9 +819,9 @@ typedef enum
 #define ASM_OUTPUT_ADDR_DIFF_ELT(FILE, BODY, VALUE, REL) 		\
   fprintf (FILE, "\t%s %s.L%d-.L%d%s\n",				\
 	   (TARGET_BIG_SWITCH ? ".long" : ".short"),			\
-	   (0 && ! TARGET_BIG_SWITCH && (TARGET_V850E || TARGET_V850E2_ALL) ? "(" : ""),             \
+	   (0 && ! TARGET_BIG_SWITCH && (TARGET_V850E_UP) ? "(" : ""),             \
 	   VALUE, REL,							\
-	   (0 && ! TARGET_BIG_SWITCH && (TARGET_V850E || TARGET_V850E2_ALL) ? ")>>1" : ""))
+	   (0 && ! TARGET_BIG_SWITCH && (TARGET_V850E_UP) ? ")>>1" : ""))
 
 #define ASM_OUTPUT_ALIGN(FILE, LOG)	\
   if ((LOG) != 0)			\
@@ -838,9 +830,19 @@ typedef enum
 /* We don't have to worry about dbx compatibility for the v850.  */
 #define DEFAULT_GDB_EXTENSIONS 1
 
-/* Use stabs debugging info by default.  */
-#undef PREFERRED_DEBUGGING_TYPE
-#define PREFERRED_DEBUGGING_TYPE DBX_DEBUG
+/* Use dwarf2 debugging info by default.  */
+#undef  PREFERRED_DEBUGGING_TYPE
+#define PREFERRED_DEBUGGING_TYPE   DWARF2_DEBUG
+
+#define DWARF2_FRAME_INFO          1
+#define DWARF2_UNWIND_INFO         0
+#define INCOMING_RETURN_ADDR_RTX   gen_rtx_REG (Pmode, LINK_POINTER_REGNUM)
+#define DWARF_FRAME_RETURN_COLUMN  DWARF_FRAME_REGNUM (LINK_POINTER_REGNUM)
+
+#ifndef ASM_GENERATE_INTERNAL_LABEL
+#define ASM_GENERATE_INTERNAL_LABEL(STRING, PREFIX, NUM)  \
+  sprintf (STRING, "*.%s%u", PREFIX, (unsigned int)(NUM))
+#endif
 
 /* Specify the machine mode that this machine uses
    for the index in the tablejump instruction.  */
@@ -864,10 +866,6 @@ typedef enum
 
 /* Byte and short loads sign extend the value to a word.  */
 #define LOAD_EXTEND_OP(MODE) SIGN_EXTEND
-
-/* This flag, if defined, says the same insns that convert to a signed fixnum
-   also convert validly to an unsigned one.  */
-#define FIXUNS_TRUNC_LIKE_FIX_TRUNC
 
 /* Max number of bytes we can move from memory to memory
    in one reasonably fast instruction.  */
@@ -954,16 +952,12 @@ typedef struct data_area_stack_element
 extern data_area_stack_element * data_area_stack;
 
 /* Names of the various data areas used on the v850.  */
-extern union tree_node * GHS_default_section_names [(int) COUNT_OF_GHS_SECTION_KINDS];
-extern union tree_node * GHS_current_section_names [(int) COUNT_OF_GHS_SECTION_KINDS];
+extern tree GHS_default_section_names [(int) COUNT_OF_GHS_SECTION_KINDS];
+extern tree GHS_current_section_names [(int) COUNT_OF_GHS_SECTION_KINDS];
 
 /* The assembler op to start the file.  */
 
 #define FILE_ASM_OP "\t.file\n"
-
-/* Enable the register move pass to improve code.  */
-#define ENABLE_REGMOVE_PASS
-
 
 /* Implement ZDA, TDA, and SDA */
 
@@ -983,5 +977,8 @@ extern union tree_node * GHS_current_section_names [(int) COUNT_OF_GHS_SECTION_K
    in a build directory where the libstdc++ header files are found via a
    -isystem <path-to-build-dir>.  */
 #define NO_IMPLICIT_EXTERN_C
+
+#define ADJUST_INSN_LENGTH(INSN, LENGTH) \
+  ((LENGTH) = v850_adjust_insn_length ((INSN), (LENGTH)))
 
 #endif /* ! GCC_V850_H */

@@ -28,11 +28,11 @@ do { \
     char *qnx_host = getenv ("QNX_HOST"); \
     char *qnx_target = getenv ("QNX_TARGET"); \
     if (qnx_host == NULL && qnx_target == NULL) \
-      fatal_error ("environment variables QNX_HOST and QNX_TARGET not defined"); \
+      fatal_error ("error: environment variables QNX_HOST and QNX_TARGET not defined"); \
     if (qnx_host == NULL) \
-      fatal_error ("environment variable QNX_HOST not defined"); \
+      fatal_error ("error: environment variable QNX_HOST not defined"); \
     if (qnx_target == NULL) \
-      fatal_error ("environment variable QNX_TARGET not defined"); \
+      fatal_error ("error: environment variable QNX_TARGET not defined"); \
     standard_libexec_prefix = concat (qnx_host, "/usr/lib/gcc/", NULL); \
     standard_exec_prefix = concat (qnx_host, "/usr/lib/gcc/", NULL); \
     standard_startfile_prefix = concat (qnx_host, "/usr/lib/", NULL); \
@@ -47,7 +47,7 @@ do { \
 -isystem %$QNX_TARGET/usr/include/c++/%v1.%v2.%v3 \
 -isystem %$QNX_TARGET/usr/include/c++/%v1.%v2.%v3/" DEFAULT_TARGET_MACHINE " \
 -isystem %$QNX_TARGET/usr/include/c++/%v1.%v2.%v3/backward \
--isysroot %$QNX_TARGET/ }"
+-isysroot %$QNX_TARGET/}"
 
 /* Don't assume anything about the header files.  */
 #undef NO_IMPLICIT_EXTERN_C
@@ -69,6 +69,13 @@ do { \
 #undef MD_EXEC_PREFIX
 #undef MD_STARTFILE_PREFIX
 
+#ifdef HAVE_GNU_INDIRECT_FUNCTION
+#define GNU_INDIRECT_FUNCTION if (HAVE_GNU_INDIRECT_FUNCTION) \
+				 builtin_define ("__GNU_INDIRECT_FUNCTION__"); 
+#else 
+#define GNU_INDIRECT_FUNCTION
+#endif
+
 #define NTO_TARGET_OS_CPP_BUILTINS()		\
 do {                                            \
         builtin_define ("__QNX__");             \
@@ -78,14 +85,9 @@ do {                                            \
         builtin_assert ("system=qnx");          \
         builtin_assert ("system=nto");          \
         builtin_assert ("system=qnxnto");       \
-	builtin_define ("__PRAGMA_PACK_PUSH_POP__");		\
-	if (HAVE_GNU_INDIRECT_FUNCTION)				\
-	   builtin_define ("__GNU_INDIRECT_FUNCTION__");	\
+        builtin_define ("__PRAGMA_PACK_PUSH_POP__");	\
+	GNU_INDIRECT_FUNCTION			\
     } while (0)
-
-/* Determine whether the entire c99 runtime
-   is present in the runtime library.  */
-#define TARGET_C99_FUNCTIONS 1
 
 /* Don't set libgcc.a's gthread/pthread symbols to weak, as our
    libc has them as well, and we get problems when linking static,
@@ -123,3 +125,6 @@ do {                                            \
 #define LINK_GCC_C_SEQUENCE_SPEC \
   "%{static:--start-group} %G %L %{static:--end-group}%{!static:%G}"
 
+#if defined(HAVE_LD_EH_FRAME_HDR)
+#define LINK_EH_SPEC "%{!static:--eh-frame-hdr} "
+#endif

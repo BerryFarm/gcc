@@ -54,20 +54,49 @@ var golden = []sha1Test{
 func TestGolden(t *testing.T) {
 	for i := 0; i < len(golden); i++ {
 		g := golden[i]
+		s := fmt.Sprintf("%x", Sum([]byte(g.in)))
+		if s != g.out {
+			t.Fatalf("Sum function: sha1(%s) = %s want %s", g.in, s, g.out)
+		}
 		c := New()
 		for j := 0; j < 3; j++ {
 			if j < 2 {
 				io.WriteString(c, g.in)
 			} else {
 				io.WriteString(c, g.in[0:len(g.in)/2])
-				c.Sum()
+				c.Sum(nil)
 				io.WriteString(c, g.in[len(g.in)/2:])
 			}
-			s := fmt.Sprintf("%x", c.Sum())
+			s := fmt.Sprintf("%x", c.Sum(nil))
 			if s != g.out {
 				t.Fatalf("sha1[%d](%s) = %s want %s", j, g.in, s, g.out)
 			}
 			c.Reset()
 		}
 	}
+}
+
+var bench = New()
+var buf = make([]byte, 8192)
+
+func benchmarkSize(b *testing.B, size int) {
+	b.SetBytes(int64(size))
+	sum := make([]byte, bench.Size())
+	for i := 0; i < b.N; i++ {
+		bench.Reset()
+		bench.Write(buf[:size])
+		bench.Sum(sum[:0])
+	}
+}
+
+func BenchmarkHash8Bytes(b *testing.B) {
+	benchmarkSize(b, 8)
+}
+
+func BenchmarkHash1K(b *testing.B) {
+	benchmarkSize(b, 1024)
+}
+
+func BenchmarkHash8K(b *testing.B) {
+	benchmarkSize(b, 8192)
 }

@@ -1,5 +1,5 @@
 /* Definitions for Intel 386 running QNX/Neutrino.
-   Copyright (C) 2002, 2003, 2004, 2005, 2006 Free Software Foundation, Inc.
+   Copyright (C) 2002-2014 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -20,9 +20,6 @@ along with GCC; see the file COPYING3.  If not see
 #undef  DEFAULT_PCC_STRUCT_RETURN
 #define DEFAULT_PCC_STRUCT_RETURN 1
 
-#undef TARGET_VERSION
-#define TARGET_VERSION	fprintf (stderr, " (QNX/Neutrino/i386 ELF)");
-
 #undef TARGET_OS_CPP_BUILTINS
 #define TARGET_OS_CPP_BUILTINS()		\
   do						\
@@ -37,14 +34,14 @@ along with GCC; see the file COPYING3.  If not see
 #define CPP_SPEC \
 QNX_SYSTEM_INCLUDES \
 " %(cpp_cpu) \
- %{posix:-D_POSIX_SOURCE}"
+ %{posix:-D_POSIX_SOURCE} %{pthread:}"
 
 #undef STARTFILE_SPEC
 #define STARTFILE_SPEC \
 "%{!shared: %{pg|p|profile:%$QNX_TARGET/x86/lib/mcrt1.o%s; \
-		pie: %$QNX_TARGET/x86/lib/crt1S.o%s; \
-		static|nopie:%$QNX_TARGET/x86/lib/crt1.o%s; \
-		:%$QNX_TARGET/x86/lib/crt1S.o%s}} \
+               pie: %$QNX_TARGET/x86/lib/crt1S.o%s; \
+               static|nopie:%$QNX_TARGET/x86/lib/crt1.o%s; \
+               :%$QNX_TARGET/x86/lib/crt1S.o%s}} \
 %$QNX_TARGET/x86/lib/crti.o%s crtbegin.o%s" 
 
 #undef ENDFILE_SPEC
@@ -84,14 +81,14 @@ QNX_SYSTEM_INCLUDES \
        %{rdynamic:-export-dynamic}} \
      --dynamic-linker /usr/lib/ldqnx.so.2}"
 
+#undef LIBGCC_SPEC
+#define LIBGCC_SPEC "-lgcc"
+
 #undef SIZE_TYPE
 #define SIZE_TYPE "unsigned int"
 
 #undef PTRDIFF_TYPE
 #define PTRDIFF_TYPE "int"
-
-#undef EH_FRAME_SECTION_NAME
-#define EH_FRAME_SECTION_NAME ".eh_frame"
 
 /* Define the register numbers to be used in Dwarf debugging information.
    QNX NTO use the SVR4 register numbers in Dwarf output code, for gdb */

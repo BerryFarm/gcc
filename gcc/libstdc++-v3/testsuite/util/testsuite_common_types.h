@@ -1,8 +1,7 @@
 // -*- C++ -*-
 // typelist for the C++ library testsuite. 
 //
-// Copyright (C) 2005, 2006, 2007, 2008, 2009, 2010, 2011
-// Free Software Foundation, Inc.
+// Copyright (C) 2005-2014 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -45,7 +44,7 @@
 #include <tr1/unordered_map>
 #include <tr1/unordered_set>
 
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus >= 201103L
 #include <atomic>
 #include <type_traits>
 #endif
@@ -257,7 +256,7 @@ namespace __gnu_test
       typedef typename append<a1, a2>::type type;
     };
 
-  // A typelist of all integral types.
+  // A typelist of all standard integral types.
   struct integral_types
   {
     typedef bool 		a1;
@@ -273,7 +272,7 @@ namespace __gnu_test
     typedef long long 		a11;
     typedef unsigned long long 	a12;
     typedef wchar_t 		a13;
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus >= 201103L
     typedef char16_t 		a14;
     typedef char32_t 		a15;
 
@@ -285,7 +284,51 @@ namespace __gnu_test
 #endif
   };
 
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+  // A typelist of all standard integral types + the GNU 128-bit types.
+  struct integral_types_gnu
+  {
+    typedef bool 		a1;
+    typedef char 		a2;
+    typedef signed char 	a3;
+    typedef unsigned char 	a4;
+    typedef short 		a5;
+    typedef unsigned short 	a6;
+    typedef int 		a7;
+    typedef unsigned int 	a8;
+    typedef long 		a9;
+    typedef unsigned long 	a10;
+    typedef long long 		a11;
+    typedef unsigned long long 	a12;
+    typedef wchar_t 		a13;
+#if __cplusplus >= 201103L
+    typedef char16_t 		a14;
+    typedef char32_t 		a15;
+# if !defined(__STRICT_ANSI__) && defined(_GLIBCXX_USE_INT128)
+    typedef __int128            a16;
+    typedef unsigned __int128   a17;
+
+    typedef node<_GLIBCXX_TYPELIST_CHAIN17(a1, a2, a3, a4, a5, a6, a7, a8, a9, 
+					   a10, a11, a12, a13, a14, a15,
+					   a16, a17)> type;
+# else
+    typedef node<_GLIBCXX_TYPELIST_CHAIN15(a1, a2, a3, a4, a5, a6, a7, a8, a9, 
+					   a10, a11, a12, a13, a14, a15)> type;
+# endif
+#else
+# if !defined(__STRICT_ANSI__) && defined(_GLIBCXX_USE_INT128)
+    typedef __int128            a14;
+    typedef unsigned __int128   a15;
+
+    typedef node<_GLIBCXX_TYPELIST_CHAIN15(a1, a2, a3, a4, a5, a6, a7, a8, a9, 
+					   a10, a11, a12, a13, a14, a15)> type;
+# else
+   typedef node<_GLIBCXX_TYPELIST_CHAIN13(a1, a2, a3, a4, a5, a6, a7, a8, a9, 
+					  a10, a11, a12, a13)> type;
+# endif
+#endif
+  };
+
+#if __cplusplus >= 201103L
   struct atomic_integrals_no_bool
   {
     typedef std::atomic_char        	a2;
@@ -347,7 +390,7 @@ namespace __gnu_test
       typedef std::numeric_limits<value_type>	type;
     };
 
-  typedef transform<integral_types::type, numeric_limits>::type limits_tl;
+  typedef transform<integral_types_gnu::type, numeric_limits>::type limits_tl;
 
   struct has_increment_operators
   {
@@ -393,7 +436,7 @@ namespace __gnu_test
       }
   };
 
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus >= 201103L
   template<typename _Tp>
     void
     constexpr_bitwise_operators()
@@ -463,7 +506,7 @@ namespace __gnu_test
       }
   };
 
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus >= 201103L
 
   struct constexpr_comparison_eq_ne
   {
@@ -505,7 +548,7 @@ namespace __gnu_test
 	    typedef std::has_trivial_default_constructor<_Tp> ctor_p;
 	    static_assert(ctor_p::value, "default constructor not trivial");
 
-	    typedef std::has_trivial_destructor<_Tp> dtor_p;
+	    typedef std::is_trivially_destructible<_Tp> dtor_p;
 	    static_assert(dtor_p::value, "destructor not trivial");
 	  }
 	};
@@ -638,7 +681,7 @@ namespace __gnu_test
       }
   };
 
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus >= 201103L
   // Generator to test default constructor.
   struct constexpr_default_constructible
   {
@@ -733,7 +776,7 @@ namespace __gnu_test
 #endif
 
   // Generator to test direct list initialization
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus >= 201103L
   struct direct_list_initializable
   {
     template<typename _Ttype, typename _Tvalue>
@@ -829,5 +872,22 @@ namespace __gnu_test
 	  = &_Concept::__constraint;
       }
   };
+
+#if __cplusplus >= 201103L
+  // Generator to test lowering requirements for compare-and-exchange.
+  template<std::memory_order _Torder>
+  struct compare_exchange_order_lowering
+  {
+    template<typename _Tp>
+      void
+      operator()()
+      {
+        std::atomic<_Tp> __x;
+        _Tp __expected = 0;
+        __x.compare_exchange_strong(__expected, 1, _Torder);
+        __x.compare_exchange_weak(__expected, 1, _Torder);
+      }
+  };
+#endif
 } // namespace __gnu_test
 #endif

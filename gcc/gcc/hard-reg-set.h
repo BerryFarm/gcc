@@ -1,6 +1,5 @@
 /* Sets (bit vectors) of hard registers, and operations on them.
-   Copyright (C) 1987, 1992, 1994, 2000, 2003, 2004, 2005, 2007, 2008, 2009,
-   2010 Free Software Foundation, Inc.
+   Copyright (C) 1987-2014 Free Software Foundation, Inc.
 
 This file is part of GCC
 
@@ -53,6 +52,14 @@ typedef unsigned HOST_WIDEST_FAST_INT HARD_REG_ELT_TYPE;
 typedef HARD_REG_ELT_TYPE HARD_REG_SET[HARD_REG_SET_LONGS];
 
 #endif
+
+/* HARD_REG_SET wrapped into a structure, to make it possible to
+   use HARD_REG_SET even in APIs that should not include
+   hard-reg-set.h.  */
+struct hard_reg_set_container
+{
+  HARD_REG_SET set;
+};
 
 /* HARD_CONST is used to cast a constant to the appropriate type
    for use with a HARD_REG_SET.  */
@@ -481,7 +488,7 @@ hard_reg_set_empty_p (const HARD_REG_SET x)
 
 /* Iterator for hard register sets.  */
 
-typedef struct
+struct hard_reg_set_iterator
 {
   /* Pointer to the current element.  */
   HARD_REG_ELT_TYPE *pelt;
@@ -496,7 +503,7 @@ typedef struct
      it is shifted right, so that the actual bit is always the least
      significant bit of ACTUAL.  */
   HARD_REG_ELT_TYPE bits;
-} hard_reg_set_iterator;
+};
 
 #define HARD_REG_ELT_BITS UHOST_BITS_PER_WIDE_INT
 
@@ -583,6 +590,13 @@ hard_reg_set_iter_next (hard_reg_set_iterator *iter, unsigned *regno)
 extern char global_regs[FIRST_PSEUDO_REGISTER];
 
 struct target_hard_regs {
+  /* The set of registers that actually exist on the current target.  */
+  HARD_REG_SET x_accessible_reg_set;
+
+  /* The set of registers that should be considered to be register
+     operands.  It is a subset of x_accessible_reg_set.  */
+  HARD_REG_SET x_operand_reg_set;
+
   /* Indexed by hard register number, contains 1 for registers
      that are fixed use (stack pointer, pc, frame pointer, etc.;.
      These are the registers that cannot be used to allocate
@@ -659,6 +673,10 @@ extern struct target_hard_regs *this_target_hard_regs;
 #define this_target_hard_regs (&default_target_hard_regs)
 #endif
 
+#define accessible_reg_set \
+  (this_target_hard_regs->x_accessible_reg_set)
+#define operand_reg_set \
+  (this_target_hard_regs->x_operand_reg_set)
 #define fixed_regs \
   (this_target_hard_regs->x_fixed_regs)
 #define fixed_reg_set \

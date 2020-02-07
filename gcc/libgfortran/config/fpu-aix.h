@@ -1,8 +1,8 @@
 /* AIX FPU-related code.
-   Copyright 2005, 2007, 2009 Free Software Foundation, Inc.
+   Copyright (C) 2005-2014 Free Software Foundation, Inc.
    Contributed by Francois-Xavier Coudert <coudert@clipper.ens.fr>
 
-This file is part of the GNU Fortran 95 runtime library (libgfortran).
+This file is part of the GNU Fortran runtime library (libgfortran).
 
 Libgfortran is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public
@@ -29,6 +29,10 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #include <fptrap.h>
 #endif
 
+#ifdef HAVE_FPXCP_H
+#include <fpxcp.h>
+#endif
+
 void
 set_fpu (void)
 {
@@ -38,46 +42,149 @@ set_fpu (void)
 #ifdef TRP_INVALID
     mode |= TRP_INVALID;
 #else
-    st_printf ("Fortran runtime warning: IEEE 'invalid operation' "
-	       "exception not supported.\n");
+    estr_write ("Fortran runtime warning: IEEE 'invalid operation' "
+	        "exception not supported.\n");
 #endif
 
   if (options.fpe & GFC_FPE_DENORMAL)
-    st_printf ("Fortran runtime warning: IEEE 'denormal number' "
-	       "exception not supported.\n");
+    estr_write ("Fortran runtime warning: Floating point 'denormal operand' "
+	        "exception not supported.\n");
 
   if (options.fpe & GFC_FPE_ZERO)
 #ifdef TRP_DIV_BY_ZERO
     mode |= TRP_DIV_BY_ZERO;
 #else
-    st_printf ("Fortran runtime warning: IEEE 'division by zero' "
-	       "exception not supported.\n");
+    estr_write ("Fortran runtime warning: IEEE 'division by zero' "
+	        "exception not supported.\n");
 #endif
 
   if (options.fpe & GFC_FPE_OVERFLOW)
 #ifdef TRP_OVERFLOW
     mode |= TRP_OVERFLOW;
 #else
-    st_printf ("Fortran runtime warning: IEEE 'overflow' "
-	       "exception not supported.\n");
+    estr_write ("Fortran runtime warning: IEEE 'overflow' "
+	        "exception not supported.\n");
 #endif
 
   if (options.fpe & GFC_FPE_UNDERFLOW)
 #ifdef TRP_UNDERFLOW
     mode |= TRP_UNDERFLOW;
 #else
-    st_printf ("Fortran runtime warning: IEEE 'underflow' "
-	       "exception not supported.\n");
+    estr_write ("Fortran runtime warning: IEEE 'underflow' "
+	        "exception not supported.\n");
 #endif
 
-  if (options.fpe & GFC_FPE_PRECISION)
-#ifdef TRP_UNDERFLOW
-    mode |= TRP_UNDERFLOW;
+  if (options.fpe & GFC_FPE_INEXACT)
+#ifdef TRP_INEXACT
+    mode |= TRP_INEXACT;
 #else
-    st_printf ("Fortran runtime warning: IEEE 'loss of precision' "
-	       "exception not supported.\n");
+    estr_write ("Fortran runtime warning: IEEE 'inexact' "
+	        "exception not supported.\n");
 #endif
 
   fp_trap(FP_TRAP_SYNC);
   fp_enable(mode);
+}
+
+
+int
+get_fpu_except_flags (void)
+{
+  int result, set_excepts;
+
+  result = 0;
+
+#ifdef HAVE_FPXCP_H
+  if (!fp_any_xcp ())
+    return 0;
+
+  if (fp_invalid_op ())
+    result |= GFC_FPE_INVALID;
+
+  if (fp_divbyzero ())
+    result |= GFC_FPE_ZERO;
+
+  if (fp_overflow ())
+    result |= GFC_FPE_OVERFLOW;
+
+  if (fp_underflow ())
+    result |= GFC_FPE_UNDERFLOW;
+
+  if (fp_inexact ())
+    result |= GFC_FPE_INEXACT;
+#endif
+
+  return result;
+}
+
+
+int
+get_fpu_rounding_mode (void)
+{
+  int rnd_mode;
+
+  rnd_mode = fegetround ();
+
+  switch (rnd_mode)
+    {
+#ifdef FE_TONEAREST
+      case FE_TONEAREST:
+	return GFC_FPE_TONEAREST;
+#endif
+
+#ifdef FE_UPWARD
+      case FE_UPWARD:
+	return GFC_FPE_UPWARD;
+#endif
+
+#ifdef FE_DOWNWARD
+      case FE_DOWNWARD:
+	return GFC_FPE_DOWNWARD;
+#endif
+
+#ifdef FE_TOWARDZERO
+      case FE_TOWARDZERO:
+	return GFC_FPE_TOWARDZERO;
+#endif
+      default:
+	return GFC_FPE_INVALID;
+    }
+}
+
+
+void
+set_fpu_rounding_mode (int mode)
+{
+  int rnd_mode;
+
+  switch (mode)
+    {
+#ifdef FE_TONEAREST
+      case GFC_FPE_TONEAREST:
+	rnd_mode = FE_TONEAREST;
+	break;
+#endif
+
+#ifdef FE_UPWARD
+      case GFC_FPE_UPWARD:
+	rnd_mode = FE_UPWARD;
+	break;
+#endif
+
+#ifdef FE_DOWNWARD
+      case GFC_FPE_DOWNWARD:
+	rnd_mode = FE_DOWNWARD;
+	break;
+#endif
+
+#ifdef FE_TOWARDZERO
+      case GFC_FPE_TOWARDZERO:
+	rnd_mode = FE_TOWARDZERO;
+	break;
+#endif
+      default:
+	return;
+    }
+
+  fesetround (rnd_mode);
 }

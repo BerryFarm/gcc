@@ -39,6 +39,7 @@ along with this program; see the file COPYING3.  If not see
 #include <stdint.h>
 #endif
 #include <assert.h>
+#include <errno.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -62,6 +63,14 @@ along with this program; see the file COPYING3.  If not see
 #include "simple-object.h"
 #include "plugin-api.h"
 
+/* We need to use I64 instead of ll width-specifier on native Windows.
+   The reason for this is that older MS-runtimes don't support the ll.  */
+#ifdef __MINGW32__
+#define PRI_LL "I64"
+#else
+#define PRI_LL "ll"
+#endif
+
 /* Handle opening elf files on hosts, such as Windows, that may use
    text file handling that will break binary access.  */
 #ifndef O_BINARY
@@ -80,12 +89,13 @@ along with this program; see the file COPYING3.  If not see
 
 /* The part of the symbol table the plugin has to keep track of. Note that we
    must keep SYMS until all_symbols_read is called to give the linker time to
-   copy the symbol information. */
+   copy the symbol information. 
+   The id must be 64bit to minimze collisions. */
 
 struct sym_aux
 {
   uint32_t slot;
-  unsigned id;
+  unsigned long long id;
   unsigned next_conflict;
 };
 
@@ -94,7 +104,7 @@ struct plugin_symtab
   int nsyms;
   struct sym_aux *aux;
   struct ld_plugin_symbol *syms;
-  unsigned id;
+  unsigned long long id;
 };
 
 /* Encapsulates object file data during symbol scan.  */
@@ -129,7 +139,7 @@ enum symbol_style
 static char *arguments_file_name;
 static ld_plugin_register_claim_file register_claim_file;
 static ld_plugin_register_all_symbols_read register_all_symbols_read;
-static ld_plugin_get_symbols get_symbols;
+static ld_plugin_get_symbols get_symbols, get_symbols_v2;
 static ld_plugin_register_cleanup register_cleanup;
 static ld_plugin_add_input_file add_input_file;
 static ld_plugin_add_input_library add_input_library;
@@ -312,8 +322,7 @@ free_1 (void)
 	{
 	  struct ld_plugin_symbol *s = &symtab->syms[j];
 	  free (s->name);
-	  if (s->comdat_key)
-	    free (s->comdat_key);
+	  free (s->comdat_key);
 	}
       free (symtab->syms);
       symtab->syms = NULL;
@@ -342,8 +351,7 @@ free_2 (void)
   claimed_files = NULL;
   num_claimed_files = 0;
 
-  if (arguments_file_name)
-    free (arguments_file_name);
+  free (arguments_file_name);
   arguments_file_name = NULL;
 }
 
@@ -361,7 +369,8 @@ dump_symtab (FILE *f, struct plugin_symtab *symtab)
       
       assert (resolution != LDPR_UNKNOWN);
 
-      fprintf (f, "%u %x %s %s\n", (unsigned int) slot, symtab->aux[j].id,
+      fprintf (f, "%u %" PRI_LL "x %s %s\n",
+               (unsigned int) slot, symtab->aux[j].id,
 	       lto_resolution_str[resolution], 
 	       symtab->syms[j].name);
     }
@@ -443,7 +452,12 @@ write_resolution (void)
       struct plugin_symtab *symtab = &info->symtab;
       struct ld_plugin_symbol *syms = symtab->syms;
 
-      get_symbols (info->handle, symtab->nsyms, syms);
+      /* Version 2 of API supports IRONLY_EXP resolution that is
+         accepted by GCC-4.7 and newer.  */
+      if (get_symbols_v2)
+        get_symbols_v2 (info->handle, symtab->nsyms, syms);
+      else
+        get_symbols (info->handle, symtab->nsyms, syms);
 
       finish_conflict_resolution (symtab, &info->conflicts);
 
@@ -741,7 +755,7 @@ resolve_conflicts (struct plugin_symtab *t, struct plugin_symtab *conflicts)
   conflicts->syms = xmalloc (sizeof (struct ld_plugin_symbol) * outlen);
   conflicts->aux = xmalloc (sizeof (struct sym_aux) * outlen);
 
-  /* Move all duplicate symbols into the auxillary conflicts table. */
+  /* Move all duplicate symbols into the auxiliary conflicts table. */
   out = 0;
   for (i = 0; i < t->nsyms; i++) 
     {
@@ -761,7 +775,7 @@ resolve_conflicts (struct plugin_symtab *t, struct plugin_symtab *conflicts)
 	    {
 	      SWAP (struct ld_plugin_symbol, *orig, *s);
 	      SWAP (uint32_t, orig_aux->slot, aux->slot);
-	      SWAP (unsigned, orig_aux->id, aux->id);
+	      SWAP (unsigned long long, orig_aux->id, aux->id);
 	      /* Don't swap conflict chain pointer */
 	    } 
 
@@ -804,31 +818,48 @@ process_symtab (void *data, const char *name, off_t offset, off_t length)
 {
   struct plugin_objfile *obj = (struct plugin_objfile *)data;
   char *s;
-  char *secdata;
+  char *secdatastart, *secdata;
 
   if (strncmp (name, LTO_SECTION_PREFIX, LTO_SECTION_PREFIX_LEN) != 0)
     return 1;
 
   s = strrchr (name, '.');
   if (s)
-    sscanf (s, ".%x", &obj->out->id);
-  secdata = xmalloc (length);
+    sscanf (s, ".%" PRI_LL "x", &obj->out->id);
+  secdata = secdatastart = xmalloc (length);
   offset += obj->file->offset;
-  if (offset != lseek (obj->file->fd, offset, SEEK_SET)
-	|| length != read (obj->file->fd, secdata, length))
-    {
-      if (message)
-	message (LDPL_FATAL, "%s: corrupt object file", obj->file->name);
-      /* Force claim_file_handler to abandon this file.  */
-      obj->found = 0;
-      free (secdata);
-      return 0;
-    }
+  if (offset != lseek (obj->file->fd, offset, SEEK_SET))
+    goto err;
 
-  translate (secdata, secdata + length, obj->out);
+  do
+    {
+      ssize_t got = read (obj->file->fd, secdata, length);
+      if (got == 0)
+	break;
+      else if (got > 0)
+	{
+	  secdata += got;
+	  length -= got;
+	}
+      else if (errno != EINTR)
+	goto err;
+    }
+  while (length > 0);
+  if (length > 0)
+    goto err;
+
+  translate (secdatastart, secdata, obj->out);
   obj->found++;
-  free (secdata);
+  free (secdatastart);
   return 1;
+
+err:
+  if (message)
+    message (LDPL_FATAL, "%s: corrupt object file", obj->file->name);
+  /* Force claim_file_handler to abandon this file.  */
+  obj->found = 0;
+  free (secdatastart);
+  return 0;
 }
 
 /* Callback used by gold to check if the plugin will claim FILE. Writes
@@ -988,6 +1019,9 @@ onload (struct ld_plugin_tv *tv)
 	case LDPT_REGISTER_ALL_SYMBOLS_READ_HOOK:
 	  register_all_symbols_read = p->tv_u.tv_register_all_symbols_read;
 	  break;
+	case LDPT_GET_SYMBOLS_V2:
+	  get_symbols_v2 = p->tv_u.tv_get_symbols;
+	  break;
 	case LDPT_GET_SYMBOLS:
 	  get_symbols = p->tv_u.tv_get_symbols;
 	  break;
@@ -1032,6 +1066,13 @@ onload (struct ld_plugin_tv *tv)
       check (status == LDPS_OK, LDPL_FATAL,
 	     "could not register the all_symbols_read callback");
     }
+
+  /* Support -fno-use-linker-plugin by failing to load the plugin
+     for the case where it is auto-loaded by BFD.  */
+  char *collect_gcc_options = getenv ("COLLECT_GCC_OPTIONS");
+  if (collect_gcc_options
+      && strstr (collect_gcc_options, "'-fno-use-linker-plugin'"))
+    return LDPS_ERR;
 
   return LDPS_OK;
 }

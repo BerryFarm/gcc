@@ -1,11 +1,13 @@
 /* tfprintf.c -- test file for mpfr_fprintf and mpfr_vfprintf
 
-Copyright 2008, 2009 Free Software Foundation, Inc.
-Contributed by the Arenaire and Cacao projects, INRIA.
+Copyright 2008-2017 Free Software Foundation, Inc.
+Contributed by the AriC and Caramba projects, INRIA.
+
+This file is part of the GNU MPFR Library.
 
 The GNU MPFR Library is free software; you can redistribute it and/or modify
 it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or (at your
+the Free Software Foundation; either version 3 of the License, or (at your
 option) any later version.
 
 The GNU MPFR Library is distributed in the hope that it will be useful, but
@@ -14,9 +16,9 @@ or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public
 License for more details.
 
 You should have received a copy of the GNU Lesser General Public License
-along with the GNU MPFR Library; see the file COPYING.LIB.  If not, write to
-the Free Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
-MA 02110-1301, USA. */
+along with the GNU MPFR Library; see the file COPYING.LESSER.  If not, see
+http://www.gnu.org/licenses/ or write to the Free Software Foundation, Inc.,
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA. */
 
 #ifdef HAVE_STDARG
 #include <stdarg.h>
@@ -26,14 +28,7 @@ MA 02110-1301, USA. */
 #include <float.h>
 #include <stddef.h>
 
-#if HAVE_INTTYPES_H
-# include <inttypes.h> /* for intmax_t */
-#else
-# if HAVE_STDINT_H
-#  include <stdint.h>
-# endif
-#endif
-
+#include "mpfr-intmax.h"
 #include "mpfr-test.h"
 
 #if MPFR_VERSION >= MPFR_VERSION_NUM(2,4,0)
@@ -62,7 +57,7 @@ MA 02110-1301, USA. */
 const int prec_max_printf = 5000;
 
 static void
-check (FILE *fout, char *fmt, mpfr_t x)
+check (FILE *fout, const char *fmt, mpfr_t x)
 {
   if (mpfr_fprintf (fout, fmt, x) == -1)
     {
@@ -74,7 +69,7 @@ check (FILE *fout, char *fmt, mpfr_t x)
 }
 
 static void
-check_vfprintf (FILE *fout, char *fmt, ...)
+check_vfprintf (FILE *fout, const char *fmt, ...)
 {
   va_list ap;
 
@@ -141,8 +136,10 @@ static void
 check_mixed (FILE *fout)
 {
   int ch = 'a';
+#ifndef NPRINTF_HH
   signed char sch = -1;
   unsigned char uch = 1;
+#endif
   short sh = -1;
   unsigned short ush = 1;
   int i = -1;
@@ -152,15 +149,19 @@ check_mixed (FILE *fout)
   unsigned long ulo = 1;
   float f = -1.25;
   double d = -1.25;
+#if !defined(NPRINTF_T) || !defined(NPRINTF_L)
   long double ld = -1.25;
+#endif
 
-  ptrdiff_t p = 1;
+#ifndef NPRINTF_T
+  ptrdiff_t p = 1, saved_p;
+#endif
   size_t sz = 1;
 
   mpz_t mpz;
   mpq_t mpq;
   mpf_t mpf;
-  mp_rnd_t rnd = GMP_RNDN;
+  mpfr_rnd_t rnd = MPFR_RNDN;
 
   mp_size_t limb_size = 3;
   mp_limb_t limb[3];
@@ -176,7 +177,7 @@ check_mixed (FILE *fout)
   mpf_set_q (mpf, mpq);
 
   mpfr_init2 (mpfr, prec);
-  mpfr_set_f (mpfr, mpf, GMP_RNDN);
+  mpfr_set_f (mpfr, mpf, MPFR_RNDN);
 
   limb[0] = limb[1] = limb[2] = ~ (mp_limb_t) 0;
 
@@ -199,7 +200,10 @@ check_mixed (FILE *fout)
   check_length_with_cmp (7, mpfr, 15, mpfr_cmp_ui (mpfr, 15), Rg);
 
 #ifndef NPRINTF_T
+  saved_p = p;
   check_vfprintf (fout, "%% a. %RNg, b. %Qx, c. %td%tn", mpfr, mpq, p, &p);
+  if (p != 20)
+    mpfr_fprintf (stderr, "Error in test 8, got '%% a. %RNg, b. %Qx, c. %td'\n", mpfr, mpq, saved_p);
   check_length (8, (long) p, 20, ld); /* no format specifier "%td" in C89 */
 #endif
 
@@ -209,18 +213,18 @@ check_mixed (FILE *fout)
 #endif
 
 #ifndef NPRINTF_HH
-  check_vfprintf (fout, "a. %hhi, b.%RA, c. %hhu%hhn", sch, mpfr, uch, &uch);
-  check_length (10, (unsigned int) uch, 21, u); /* no format specifier "%hhu" in C89 */
+  check_vfprintf (fout, "a. %hhi, b. %RA, c. %hhu%hhn", sch, mpfr, uch, &uch);
+  check_length (10, (unsigned int) uch, 22, u); /* no format specifier "%hhu" in C89 */
 #endif
 
 #if (__GNU_MP_VERSION * 10 + __GNU_MP_VERSION_MINOR) >= 42
   /* The 'M' specifier was added in gmp 4.2.0 */
   check_vfprintf (fout, "a. %Mx b. %Re%Mn", limb[0], mpfr, &limb[0]);
-  if (limb[0] != 14 + BITS_PER_MP_LIMB / 4 || limb[1] != ~ (mp_limb_t) 0
+  if (limb[0] != 14 + GMP_NUMB_BITS / 4 || limb[1] != ~ (mp_limb_t) 0
       || limb[2] != ~ (mp_limb_t) 0)
     {
       printf ("Error in test #11: mpfr_vfprintf did not print %d characters"
-              " as expected\n", 14 + (int) BITS_PER_MP_LIMB / 4);
+              " as expected\n", 14 + (int) GMP_NUMB_BITS / 4);
       exit (1);
     }
 
@@ -229,11 +233,11 @@ check_mixed (FILE *fout)
      and check it doesn't go through */
   check_vfprintf (fout, "a. %Re .b %Nx%Nn", mpfr, limb, limb_size, limb,
                   limb_size - 1);
-  if (limb[0] != 14 + 3 * BITS_PER_MP_LIMB / 4 || limb[1] != (mp_limb_t) 0
+  if (limb[0] != 14 + 3 * GMP_NUMB_BITS / 4 || limb[1] != (mp_limb_t) 0
       || limb[2] != ~ (mp_limb_t) 0)
     {
       printf ("Error in test #12: mpfr_vfprintf did not print %d characters"
-              " as expected\n", 14 + (int) BITS_PER_MP_LIMB / 4);
+              " as expected\n", 14 + (int) GMP_NUMB_BITS / 4);
       exit (1);
     }
 #endif
@@ -273,7 +277,7 @@ check_random (FILE *fout, int nb_tests)
 {
   int i;
   mpfr_t x;
-  mp_rnd_t rnd;
+  mpfr_rnd_t rnd;
   char flag[] =
     {
       '-',
@@ -291,7 +295,7 @@ check_random (FILE *fout, int nb_tests)
       'f',
       'g'
     };
-  mp_exp_t old_emin, old_emax;
+  mpfr_exp_t old_emin, old_emax;
 
   old_emin = mpfr_get_emin ();
   old_emax = mpfr_get_emax ();
@@ -307,7 +311,7 @@ check_random (FILE *fout, int nb_tests)
       char fmt[FMT_SIZE]; /* at most something like "%-+ #0'.*R*f" */
       char *ptr = fmt;
 
-      tests_default_random (x, 256, MPFR_EMIN_MIN, MPFR_EMAX_MAX);
+      tests_default_random (x, 256, MPFR_EMIN_MIN, MPFR_EMAX_MAX, 0);
       rnd = RND_RAND ();
 
       spec = (int) (randlimb () % 5);
@@ -369,7 +373,7 @@ bug_20090316 (FILE *fout)
   mpfr_init2 (x, 53);
 
   /* bug 20090316: fixed in r6112 */
-  mpfr_set_ui_2exp (x, 0x60fa2916, -30, GMP_RNDN);
+  mpfr_set_ui_2exp (x, 0x60fa2916, -30, MPFR_RNDN);
   check (fout, "%-#.4095RDg\n", x);
 
   mpfr_clear (x);
@@ -392,7 +396,7 @@ main (int argc, char *argv[])
       /* If we failed to open this device, try with a dummy file */
       if (fout == NULL)
         {
-          fout = fopen ("mpfrtest.txt", "w");
+          fout = fopen ("tfprintf_out.txt", "w");
 
           if (fout == NULL)
             {
@@ -435,7 +439,7 @@ int
 main (void)
 {
   /* We have nothing to test. */
-  return 0;
+  return 77;
 }
 
 #endif  /* HAVE_STDARG */

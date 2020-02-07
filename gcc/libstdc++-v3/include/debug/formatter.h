@@ -1,7 +1,6 @@
 // Debug-mode error formatting implementation -*- C++ -*-
 
-// Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
-// Free Software Foundation, Inc.
+// Copyright (C) 2003-2014 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -39,12 +38,15 @@ namespace __gnu_debug
   using std::type_info;
 
   template<typename _Iterator>
-    bool __check_singular(_Iterator&);
+    bool __check_singular(const _Iterator&);
 
   class _Safe_sequence_base;
 
   template<typename _Iterator, typename _Sequence>
     class _Safe_iterator;
+
+  template<typename _Iterator, typename _Sequence>
+    class _Safe_local_iterator;
 
   template<typename _Sequence>
     class _Safe_sequence;
@@ -103,7 +105,18 @@ namespace __gnu_debug
     // forward_list
     __msg_insert_after_end,
     __msg_erase_after_bad,
-    __msg_valid_range2
+    __msg_valid_range2,
+    // unordered container local iterators
+    __msg_local_iter_compare_bad,
+    __msg_non_empty_range,
+    // self move assign
+    __msg_self_move_assign,
+    // unordered container buckets
+    __msg_bucket_index_oob,
+    __msg_valid_load_factor,
+    // others
+    __msg_equal_allocs,
+    __msg_insert_range_from_self
   };
 
   class _Error_formatter
@@ -228,6 +241,42 @@ namespace __gnu_debug
 	      if (__it._M_is_before_begin())
 		_M_variant._M_iterator._M_state = __before_begin;
 	      else if (__it._M_is_end())
+		_M_variant._M_iterator._M_state = __end;
+	      else if (__it._M_is_begin())
+		_M_variant._M_iterator._M_state = __begin;
+	      else
+		_M_variant._M_iterator._M_state = __middle;
+	    }
+	}
+
+      template<typename _Iterator, typename _Sequence>
+	_Parameter(const _Safe_local_iterator<_Iterator, _Sequence>& __it,
+		   const char* __name, _Is_iterator)
+	: _M_kind(__iterator),  _M_variant()
+	{
+	  _M_variant._M_iterator._M_name = __name;
+	  _M_variant._M_iterator._M_address = &__it;
+#ifdef __GXX_RTTI
+	  _M_variant._M_iterator._M_type = &typeid(__it);
+#else
+	  _M_variant._M_iterator._M_type = 0;
+#endif
+	  _M_variant._M_iterator._M_constness =
+	    std::__are_same<_Safe_local_iterator<_Iterator, _Sequence>,
+	                    typename _Sequence::local_iterator>::
+	      __value ? __mutable_iterator : __const_iterator;
+	  _M_variant._M_iterator._M_sequence = __it._M_get_sequence();
+#ifdef __GXX_RTTI
+	  _M_variant._M_iterator._M_seq_type = &typeid(_Sequence);
+#else
+	  _M_variant._M_iterator._M_seq_type = 0;
+#endif
+
+	  if (__it._M_singular())
+	    _M_variant._M_iterator._M_state = __singular;
+	  else
+	    {
+	      if (__it._M_is_end())
 		_M_variant._M_iterator._M_state = __end;
 	      else if (__it._M_is_begin())
 		_M_variant._M_iterator._M_state = __begin;

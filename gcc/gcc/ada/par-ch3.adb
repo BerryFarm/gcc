@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2010, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -210,24 +210,10 @@ package body Ch3 is
       --  we set Force_Msg to True, since we want at least one message for each
       --  separate declaration (but not use) of a reserved identifier.
 
+      --  Duplication should be removed, common code should be factored???
+
       if Token = Tok_Identifier then
-
-         --  Ada 2005 (AI-284): Compiling in Ada95 mode we warn that INTERFACE,
-         --  OVERRIDING, and SYNCHRONIZED are new reserved words. Note that
-         --  in the case where these keywords are misused in Ada 95 mode,
-         --  this routine will generally not be called at all.
-
-         if Ada_Version = Ada_95
-           and then Warn_On_Ada_2005_Compatibility
-         then
-            if Token_Name = Name_Overriding
-              or else Token_Name = Name_Synchronized
-              or else (Token_Name = Name_Interface
-                        and then Prev_Token /= Tok_Pragma)
-            then
-               Error_Msg_N ("& is a reserved word in Ada 2005?", Token_Node);
-            end if;
-         end if;
+         Check_Future_Keyword;
 
       --  If we have a reserved identifier, manufacture an identifier with
       --  a corresponding name after posting an appropriate error message
@@ -257,6 +243,13 @@ package body Ch3 is
 
       if Ident_Node /= Error then
          Change_Identifier_To_Defining_Identifier (Ident_Node);
+
+         --  Warn if standard redefinition, except that we never warn on a
+         --  record field definition (since this is always a harmless case).
+
+         if not Inside_Record_Definition then
+            Warn_If_Standard_Redefinition (Ident_Node);
+         end if;
       end if;
 
       return Ident_Node;
@@ -282,13 +275,14 @@ package body Ch3 is
 
    --  PRIVATE_TYPE_DECLARATION ::=
    --    type DEFINING_IDENTIFIER [DISCRIMINANT_PART]
-   --      is [abstract] [tagged] [limited] private;
+   --      is [abstract] [tagged] [limited] private
+   --        [ASPECT_SPECIFICATIONS];
 
    --  PRIVATE_EXTENSION_DECLARATION ::=
    --    type DEFINING_IDENTIFIER [DISCRIMINANT_PART] is
    --      [abstract] [limited | synchronized]
    --        new ancestor_SUBTYPE_INDICATION [and INTERFACE_LIST]
-   --          with private;
+   --          with private [ASPECT_SPECIFICATIONS];
 
    --  TYPE_DEFINITION ::=
    --    ENUMERATION_TYPE_DEFINITION  | INTEGER_TYPE_DEFINITION
@@ -647,7 +641,7 @@ package body Ch3 is
                      Error_Msg_SP
                        ("(Ada 83) limited record declaration not allowed!");
 
-                  --  In Ada2005, "abstract limited" can appear before "new",
+                  --  In Ada 2005, "abstract limited" can appear before "new",
                   --  but it cannot be part of an untagged record declaration.
 
                   elsif Abstract_Present
@@ -707,7 +701,7 @@ package body Ch3 is
                else
                   Decl_Node := New_Node (N_Private_Type_Declaration, Type_Loc);
                   Set_Limited_Present (Decl_Node, True);
-                  T_Private; -- past PRIVATE (or complain if not there!)
+                  T_Private; -- past PRIVATE (or complain if not there)
                end if;
 
                exit;
@@ -941,7 +935,8 @@ package body Ch3 is
    --------------------------------
 
    --  SUBTYPE_DECLARATION ::=
-   --    subtype DEFINING_IDENTIFIER is [NULL_EXCLUSION] SUBTYPE_INDICATION;
+   --    subtype DEFINING_IDENTIFIER is [NULL_EXCLUSION] SUBTYPE_INDICATION
+   --      [ASPECT_SPECIFICATIONS];
 
    --  The caller has checked that the initial token is SUBTYPE
 
@@ -1073,7 +1068,11 @@ package body Ch3 is
    begin
       Constr_Node := P_Constraint_Opt;
 
-      if No (Constr_Node) then
+      if No (Constr_Node)
+        or else
+          (Nkind (Constr_Node) = N_Range_Constraint
+             and then Nkind (Range_Expression (Constr_Node)) = N_Error)
+      then
          return Subtype_Mark;
       else
          if Not_Null_Present then
@@ -1124,16 +1123,6 @@ package body Ch3 is
          Error_Msg_SC ("anonymous array definition not allowed here");
          Discard_Junk_Node (P_Array_Type_Definition);
          return Error;
-
-      --  If Some becomes a keyword, the following is needed to make it
-      --  acceptable in older versions of Ada.
-
-      elsif Token = Tok_Some
-        and then Ada_Version < Ada_2012
-      then
-         Scan_Reserved_Identifier (False);
-         Scan;
-         return Token_Node;
 
       else
          Type_Node := P_Qualified_Simple_Name_Resync;
@@ -1289,12 +1278,15 @@ package body Ch3 is
 
    --  OBJECT_RENAMING_DECLARATION ::=
    --    DEFINING_IDENTIFIER :
-   --      [NULL_EXCLUSION] SUBTYPE_MARK renames object_NAME;
+   --      [NULL_EXCLUSION] SUBTYPE_MARK renames object_NAME
+   --        [ASPECT_SPECIFICATIONS];
    --  | DEFINING_IDENTIFIER :
-   --      ACCESS_DEFINITION renames object_NAME;
+   --      ACCESS_DEFINITION renames object_NAME
+   --        [ASPECT_SPECIFICATIONS];
 
    --  EXCEPTION_RENAMING_DECLARATION ::=
-   --    DEFINING_IDENTIFIER : exception renames exception_NAME;
+   --    DEFINING_IDENTIFIER : exception renames exception_NAME
+   --      [ASPECT_SPECIFICATIONS];
 
    --  EXCEPTION_DECLARATION ::=
    --    DEFINING_IDENTIFIER_LIST : exception
@@ -1681,15 +1673,19 @@ package body Ch3 is
 
             --  OBJECT_DECLARATION ::=
             --    DEFINING_IDENTIFIER_LIST : [aliased] [constant]
-            --      [NULL_EXCLUSION] SUBTYPE_INDICATION [:= EXPRESSION];
+            --      [NULL_EXCLUSION] SUBTYPE_INDICATION [:= EXPRESSION]
+            --        [ASPECT_SPECIFICATIONS];
             --  | DEFINING_IDENTIFIER_LIST : [aliased] [constant]
-            --      ACCESS_DEFINITION [:= EXPRESSION];
+            --      ACCESS_DEFINITION [:= EXPRESSION]
+            --        [ASPECT_SPECIFICATIONS];
 
             --  OBJECT_RENAMING_DECLARATION ::=
             --    DEFINING_IDENTIFIER :
-            --      [NULL_EXCLUSION] SUBTYPE_MARK renames object_NAME;
+            --      [NULL_EXCLUSION] SUBTYPE_MARK renames object_NAME
+            --        [ASPECT_SPECIFICATIONS];
             --  | DEFINING_IDENTIFIER :
-            --      ACCESS_DEFINITION renames object_NAME;
+            --      ACCESS_DEFINITION renames object_NAME
+            --        [ASPECT_SPECIFICATIONS];
 
             Not_Null_Present := P_Null_Exclusion;  --  Ada 2005 (AI-231/423)
 
@@ -1905,7 +1901,7 @@ package body Ch3 is
    --     type DEFINING_IDENTIFIER [DISCRIMINANT_PART] is
    --       [abstract] [limited | synchronized]
    --          new ancestor_SUBTYPE_INDICATION [and INTERFACE_LIST]
-   --            with private;
+   --            with private [ASPECT_SPECIFICATIONS];
 
    --  RECORD_EXTENSION_PART ::= with RECORD_DEFINITION
 
@@ -2298,13 +2294,30 @@ package body Ch3 is
          Scan; -- past RANGE
       end if;
 
-      Expr_Node := P_Expression;
-      Check_Simple_Expression (Expr_Node);
-      Set_Low_Bound (Typedef_Node, Expr_Node);
-      T_Dot_Dot;
-      Expr_Node := P_Expression;
-      Check_Simple_Expression (Expr_Node);
-      Set_High_Bound (Typedef_Node, Expr_Node);
+      Expr_Node := P_Expression_Or_Range_Attribute;
+
+      --  Range case (not permitted by the grammar, this is surprising but
+      --  the grammar in the RM is as quoted above, and does not allow Range).
+
+      if Expr_Form = EF_Range_Attr then
+         Error_Msg_N
+           ("Range attribute not allowed here, use First .. Last", Expr_Node);
+         Set_Low_Bound (Typedef_Node, Expr_Node);
+         Set_Attribute_Name (Expr_Node, Name_First);
+         Set_High_Bound (Typedef_Node, Copy_Separate_Tree (Expr_Node));
+         Set_Attribute_Name (High_Bound (Typedef_Node), Name_Last);
+
+      --  Normal case of explicit range
+
+      else
+         Check_Simple_Expression (Expr_Node);
+         Set_Low_Bound (Typedef_Node, Expr_Node);
+         T_Dot_Dot;
+         Expr_Node := P_Expression;
+         Check_Simple_Expression (Expr_Node);
+         Set_High_Bound (Typedef_Node, Expr_Node);
+      end if;
+
       return Typedef_Node;
    end P_Signed_Integer_Type_Definition;
 
@@ -2528,6 +2541,7 @@ package body Ch3 is
    --  Note: this is an obsolescent feature in Ada 95 (I.3)
 
    --  Note: in Ada 83, the EXPRESSION must be a SIMPLE_EXPRESSION
+   --  (also true in formal modes).
 
    --  The caller has checked that the initial token is DELTA
 
@@ -2542,6 +2556,7 @@ package body Ch3 is
       Scan; -- past DELTA
       Expr_Node := P_Expression;
       Check_Simple_Expression_In_Ada_83 (Expr_Node);
+
       Set_Delta_Expression (Constraint_Node, Expr_Node);
 
       if Token = Tok_Range then
@@ -2666,9 +2681,12 @@ package body Ch3 is
             Error_Msg_SP ("\unit must be compiled with -gnat05 switch");
          end if;
 
-         if Aliased_Present then
-            Error_Msg_SP ("ALIASED not allowed here");
-         end if;
+         --  AI95-406 makes "aliased" legal (and useless) in this context so
+         --  followintg code which used to be needed is commented out.
+
+         --  if Aliased_Present then
+         --     Error_Msg_SP ("ALIASED not allowed here");
+         --  end if;
 
          Set_Subtype_Indication     (CompDef_Node, Empty);
          Set_Aliased_Present        (CompDef_Node, False);
@@ -2776,9 +2794,15 @@ package body Ch3 is
          Set_High_Bound (Range_Node, Expr_Node);
          return Range_Node;
 
-      --  Otherwise we must have a subtype mark
+      --  Otherwise we must have a subtype mark, or an Ada 2012 iterator
 
       elsif Expr_Form = EF_Simple_Name then
+         return Expr_Node;
+
+      --  The domain of iteration must be a name. Semantics will determine that
+      --  the expression has the proper form.
+
+      elsif Ada_Version >= Ada_2012 then
          return Expr_Node;
 
       --  If incorrect, complain that we expect ..
@@ -3182,6 +3206,7 @@ package body Ch3 is
       Rec_Node : Node_Id;
 
    begin
+      Inside_Record_Definition := True;
       Rec_Node := New_Node (N_Record_Definition, Token_Ptr);
 
       --  Null record case
@@ -3226,6 +3251,7 @@ package body Ch3 is
          end loop;
       end if;
 
+      Inside_Record_Definition := False;
       return Rec_Node;
    end P_Record_Definition;
 
@@ -3244,87 +3270,100 @@ package body Ch3 is
       Component_List_Node : Node_Id;
       Decls_List          : List_Id;
       Scan_State          : Saved_Scan_State;
+      Null_Loc            : Source_Ptr;
 
    begin
       Component_List_Node := New_Node (N_Component_List, Token_Ptr);
       Decls_List := New_List;
 
+      --  Handle null
+
       if Token = Tok_Null then
+         Null_Loc := Token_Ptr;
          Scan; -- past NULL
          TF_Semicolon;
          P_Pragmas_Opt (Decls_List);
-         Set_Null_Present (Component_List_Node, True);
-         return Component_List_Node;
 
-      else
-         P_Pragmas_Opt (Decls_List);
+         --  If we have an END or WHEN now, everything is fine, otherwise we
+         --  complain about the null, ignore it, and scan for more components.
 
-         if Token /= Tok_Case then
-            Component_Scan_Loop : loop
-               P_Component_Items (Decls_List);
-               P_Pragmas_Opt (Decls_List);
+         if Token = Tok_End or else Token = Tok_When then
+            Set_Null_Present (Component_List_Node, True);
+            return Component_List_Node;
+         else
+            Error_Msg ("NULL component only allowed in null record", Null_Loc);
+         end if;
+      end if;
 
-               exit Component_Scan_Loop when Token = Tok_End
-                 or else Token = Tok_Case
-                 or else Token = Tok_When;
+      --  Scan components for non-null record
 
-               --  We are done if we do not have an identifier. However, if
-               --  we have a misspelled reserved identifier that is in a column
-               --  to the right of the record definition, we will treat it as
-               --  an identifier. It turns out to be too dangerous in practice
-               --  to accept such a mis-spelled identifier which does not have
-               --  this additional clue that confirms the incorrect spelling.
+      P_Pragmas_Opt (Decls_List);
 
-               if Token /= Tok_Identifier then
-                  if Start_Column > Scope.Table (Scope.Last).Ecol
-                    and then Is_Reserved_Identifier
-                  then
-                     Save_Scan_State (Scan_State); -- at reserved id
-                     Scan; -- possible reserved id
+      if Token /= Tok_Case then
+         Component_Scan_Loop : loop
+            P_Component_Items (Decls_List);
+            P_Pragmas_Opt (Decls_List);
 
-                     if Token = Tok_Comma or else Token = Tok_Colon then
-                        Restore_Scan_State (Scan_State);
-                        Scan_Reserved_Identifier (Force_Msg => True);
+            exit Component_Scan_Loop when Token = Tok_End
+              or else Token = Tok_Case
+              or else Token = Tok_When;
 
-                     --  Note reserved identifier used as field name after
-                     --  all because not followed by colon or comma
+            --  We are done if we do not have an identifier. However, if we
+            --  have a misspelled reserved identifier that is in a column to
+            --  the right of the record definition, we will treat it as an
+            --  identifier. It turns out to be too dangerous in practice to
+            --  accept such a mis-spelled identifier which does not have this
+            --  additional clue that confirms the incorrect spelling.
 
-                     else
-                        Restore_Scan_State (Scan_State);
-                        exit Component_Scan_Loop;
-                     end if;
+            if Token /= Tok_Identifier then
+               if Start_Column > Scope.Table (Scope.Last).Ecol
+                 and then Is_Reserved_Identifier
+               then
+                  Save_Scan_State (Scan_State); -- at reserved id
+                  Scan; -- possible reserved id
+
+                  if Token = Tok_Comma or else Token = Tok_Colon then
+                     Restore_Scan_State (Scan_State);
+                     Scan_Reserved_Identifier (Force_Msg => True);
+
+                     --  Note reserved identifier used as field name after all
+                     --  because not followed by colon or comma.
+
+                  else
+                     Restore_Scan_State (Scan_State);
+                     exit Component_Scan_Loop;
+                  end if;
 
                   --  Non-identifier that definitely was not reserved id
 
-                  else
-                     exit Component_Scan_Loop;
-                  end if;
-               end if;
-            end loop Component_Scan_Loop;
-         end if;
-
-         if Token = Tok_Case then
-            Set_Variant_Part (Component_List_Node, P_Variant_Part);
-
-            --  Check for junk after variant part
-
-            if Token = Tok_Identifier then
-               Save_Scan_State (Scan_State);
-               Scan; -- past identifier
-
-               if Token = Tok_Colon then
-                  Restore_Scan_State (Scan_State);
-                  Error_Msg_SC ("component may not follow variant part");
-                  Discard_Junk_Node (P_Component_List);
-
-               elsif Token = Tok_Case then
-                  Restore_Scan_State (Scan_State);
-                  Error_Msg_SC ("only one variant part allowed in a record");
-                  Discard_Junk_Node (P_Component_List);
-
                else
-                  Restore_Scan_State (Scan_State);
+                  exit Component_Scan_Loop;
                end if;
+            end if;
+         end loop Component_Scan_Loop;
+      end if;
+
+      if Token = Tok_Case then
+         Set_Variant_Part (Component_List_Node, P_Variant_Part);
+
+         --  Check for junk after variant part
+
+         if Token = Tok_Identifier then
+            Save_Scan_State (Scan_State);
+            Scan; -- past identifier
+
+            if Token = Tok_Colon then
+               Restore_Scan_State (Scan_State);
+               Error_Msg_SC ("component may not follow variant part");
+               Discard_Junk_Node (P_Component_List);
+
+            elsif Token = Tok_Case then
+               Restore_Scan_State (Scan_State);
+               Error_Msg_SC ("only one variant part allowed in a record");
+               Discard_Junk_Node (P_Component_List);
+
+            else
+               Restore_Scan_State (Scan_State);
             end if;
          end if;
       end if;
@@ -3435,9 +3474,12 @@ package body Ch3 is
                   Error_Msg_SP ("\unit must be compiled with -gnat05 switch");
                end if;
 
-               if Aliased_Present then
-                  Error_Msg_SP ("ALIASED not allowed here");
-               end if;
+               --  AI95-406 makes "aliased" legal (and useless) here, so the
+               --  following code which used to be required is commented out.
+
+               --  if Aliased_Present then
+               --     Error_Msg_SP ("ALIASED not allowed here");
+               --  end if;
 
                Set_Subtype_Indication (CompDef_Node, Empty);
                Set_Aliased_Present    (CompDef_Node, False);
@@ -3714,13 +3756,23 @@ package body Ch3 is
          end if;
 
          if Token = Tok_Comma then
-            Error_Msg_SC -- CODEFIX
-              (""","" should be ""'|""");
+            Scan; -- past comma
+
+            if Token = Tok_Vertical_Bar then
+               Error_Msg_SP -- CODEFIX
+                 ("|extra "","" ignored");
+               Scan; -- past |
+
+            else
+               Error_Msg_SP -- CODEFIX
+                 (""","" should be ""'|""");
+            end if;
+
          else
             exit when Token /= Tok_Vertical_Bar;
+            Scan; -- past |
          end if;
 
-         Scan; -- past | or comma
       end loop;
 
       return Choices;
@@ -4207,7 +4259,7 @@ package body Ch3 is
                P_Identifier_Declarations (Decls, Done, In_Spec);
             end if;
 
-         --  Ada2005: A subprogram declaration can start with "not" or
+         --  Ada 2005: A subprogram declaration can start with "not" or
          --  "overriding". In older versions, "overriding" is handled
          --  like an identifier, with the appropriate messages.
 
@@ -4264,8 +4316,42 @@ package body Ch3 is
 
          when Tok_With =>
             Check_Bad_Layout;
-            Error_Msg_SC ("WITH can only appear in context clause");
-            raise Error_Resync;
+
+            if Aspect_Specifications_Present then
+
+               --  If we are after a semicolon, complain that it was ignored.
+               --  But we don't really ignore it, since we dump the aspects,
+               --  so we make the error message a normal fatal message which
+               --  will inhibit semantic analysis anyway).
+
+               if Prev_Token = Tok_Semicolon then
+                  Error_Msg_SP -- CODEFIX
+                    ("extra "";"" ignored");
+
+               --  If not just past semicolon, just complain that aspects are
+               --  not allowed at this point.
+
+               else
+                  Error_Msg_SC ("aspect specifications not allowed here");
+               end if;
+
+               declare
+                  Dummy_Node : constant Node_Id :=
+                                 New_Node (N_Package_Specification, Token_Ptr);
+                  pragma Warnings (Off, Dummy_Node);
+                  --  Dummy node to attach aspect specifications to. We will
+                  --  then throw them away.
+
+               begin
+                  P_Aspect_Specifications (Dummy_Node, Semicolon => True);
+               end;
+
+            --  Here if not aspect specifications case
+
+            else
+               Error_Msg_SC ("WITH can only appear in context clause");
+               raise Error_Resync;
+            end if;
 
          --  BEGIN terminates the scan of a sequence of declarations unless
          --  there is a missing subprogram body, see section on handling
@@ -4433,7 +4519,7 @@ package body Ch3 is
                Scan; -- past PRIVATE
             end if;
 
-         --  An end of file definitely terminates the declarations!
+         --  An end of file definitely terminates the declarations
 
          when Tok_EOF =>
             Done := True;
@@ -4534,11 +4620,22 @@ package body Ch3 is
          --  Test for body scanned, not acceptable as basic decl item
 
          if Kind = N_Subprogram_Body or else
-            Kind = N_Package_Body or else
-            Kind = N_Task_Body or else
+            Kind = N_Package_Body    or else
+            Kind = N_Task_Body       or else
             Kind = N_Protected_Body
          then
             Error_Msg ("proper body not allowed in package spec", Sloc (Decl));
+
+            --  Complete declaration of mangled subprogram body, for better
+            --  recovery if analysis is attempted.
+
+            if Nkind_In (Decl, N_Subprogram_Body, N_Package_Body, N_Task_Body)
+              and then No (Handled_Statement_Sequence (Decl))
+            then
+               Set_Handled_Statement_Sequence (Decl,
+                 Make_Handled_Sequence_Of_Statements (Sloc (Decl),
+                   Statements => New_List));
+            end if;
 
          --  Test for body stub scanned, not acceptable as basic decl item
 
@@ -4657,7 +4754,7 @@ package body Ch3 is
       --  declaration sequence on a second error, we scan out the statement
       --  and append it to the list of declarations (note that the semantics
       --  can handle statements in a declaration list so if we proceed to
-      --  call the semantic phase, all will be (reasonably) well!
+      --  call the semantic phase, all will be (reasonably) well.
 
       Append_List_To (Decls, P_Sequence_Of_Statements (SS_Unco));
 

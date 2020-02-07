@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2000-2007, Free Software Foundation, Inc.         --
+--          Copyright (C) 2000-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -27,6 +27,7 @@ with Atree;    use Atree;
 with Einfo;    use Einfo;
 with Lib;      use Lib;
 with Nlists;   use Nlists;
+with Sem_Aux;  use Sem_Aux;
 with Sem_Util; use Sem_Util;
 with Sinfo;    use Sinfo;
 with Types;    use Types;
@@ -83,7 +84,7 @@ package body Live is
    --  Given a subprogram body N, return defining identifier of its declaration
 
    --  ??? the body of this package contains no comments at all, this
-   --  should be fixed!
+   --  should be fixed.
 
    -------------
    -- Body_Of --

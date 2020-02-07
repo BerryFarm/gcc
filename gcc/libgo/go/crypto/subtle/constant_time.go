@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// This package implements functions that are often useful in cryptographic
+// Package subtle implements functions that are often useful in cryptographic
 // code but require careful thought to use correctly.
 package subtle
 
@@ -54,4 +54,12 @@ func ConstantTimeCopy(v int, x, y []byte) {
 		x[i] = x[i]&xmask | y[i]&ymask
 	}
 	return
+}
+
+// ConstantTimeLessOrEq returns 1 if x <= y and 0 otherwise.
+// Its behavior is undefined if x or y are negative or > 2**31 - 1.
+func ConstantTimeLessOrEq(x, y int) int {
+	x32 := int32(x)
+	y32 := int32(y)
+	return int(((x32 - y32 - 1) >> 31) & 1)
 }

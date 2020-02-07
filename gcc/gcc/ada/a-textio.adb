@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2010, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -71,7 +71,7 @@ package body Ada.Text_IO is
    --  correct filename length.
    --
    --  Note: the names for these files are bogus, and probably it would be
-   --  better for these files to have no names, but the ACVC tests insist!
+   --  better for these files to have no names, but the ACVC tests insist.
    --  We use names that are bound to fail in open etc.
 
    Null_Str : aliased constant String := "";
@@ -1274,30 +1274,7 @@ package body Ada.Text_IO is
 
    procedure Put (Item : Character) is
    begin
-      FIO.Check_Write_Status (AP (Current_Out));
-
-      if Current_Out.Line_Length /= 0
-        and then Current_Out.Col > Current_Out.Line_Length
-      then
-         New_Line (Current_Out);
-      end if;
-
-      --  If lower half character, or brackets encoding, output directly
-
-      if Character'Pos (Item) < 16#80#
-        or else Default_WCEM = WCEM_Brackets
-      then
-         if fputc (Character'Pos (Item), Current_Out.Stream) = EOF then
-            raise Device_Error;
-         end if;
-
-      --  Case of upper half character with non-brackets encoding
-
-      else
-         Put_Encoded (Current_Out, Item);
-      end if;
-
-      Current_Out.Col := Current_Out.Col + 1;
+      Put (Current_Out, Item);
    end Put;
 
    ---------
@@ -2141,8 +2118,7 @@ package body Ada.Text_IO is
       end Has_Translated_Characters;
 
       Needs_Binary_Write : constant Boolean :=
-                             text_translation_required
-                               and then Has_Translated_Characters;
+        text_translation_required and then Has_Translated_Characters;
 
    --  Start of processing for Write
 

@@ -1,8 +1,6 @@
 // Raw memory manipulators -*- C++ -*-
 
-// Copyright (C) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-// 2009, 2010, 2011
-// Free Software Foundation, Inc.
+// Copyright (C) 2001-2014 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -97,10 +95,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
   /**
    *  @brief Copies the range [first,last) into result.
-   *  @param  first  An input iterator.
-   *  @param  last   An input iterator.
-   *  @param  result An output iterator.
-   *  @return   result + (first - last)
+   *  @param  __first  An input iterator.
+   *  @param  __last   An input iterator.
+   *  @param  __result An output iterator.
+   *  @return   __result + (__first - __last)
    *
    *  Like copy(), but does not require an initialized output range.
   */
@@ -113,9 +111,17 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	_ValueType1;
       typedef typename iterator_traits<_ForwardIterator>::value_type
 	_ValueType2;
+#if __cplusplus < 201103L
+      const bool __assignable = true;
+#else
+      // trivial types can have deleted assignment
+      typedef typename iterator_traits<_InputIterator>::reference _RefType;
+      const bool __assignable = is_assignable<_ValueType1, _RefType>::value;
+#endif
 
-      return std::__uninitialized_copy<(__is_trivial(_ValueType1)
-					&& __is_trivial(_ValueType2))>::
+      return std::__uninitialized_copy<__is_trivial(_ValueType1)
+				       && __is_trivial(_ValueType2)
+				       && __assignable>::
 	__uninit_copy(__first, __last, __result);
     }
 
@@ -154,9 +160,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
   /**
    *  @brief Copies the value x into the range [first,last).
-   *  @param  first  An input iterator.
-   *  @param  last   An input iterator.
-   *  @param  x      The source value.
+   *  @param  __first  An input iterator.
+   *  @param  __last   An input iterator.
+   *  @param  __x      The source value.
    *  @return   Nothing.
    *
    *  Like fill(), but does not require an initialized output range.
@@ -168,8 +174,14 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     {
       typedef typename iterator_traits<_ForwardIterator>::value_type
 	_ValueType;
+#if __cplusplus < 201103L
+      const bool __assignable = true;
+#else
+      // trivial types can have deleted assignment
+      const bool __assignable = is_copy_assignable<_ValueType>::value;
+#endif
 
-      std::__uninitialized_fill<__is_trivial(_ValueType)>::
+      std::__uninitialized_fill<__is_trivial(_ValueType) && __assignable>::
 	__uninit_fill(__first, __last, __x);
     }
 
@@ -208,9 +220,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
   /**
    *  @brief Copies the value x into the range [first,first+n).
-   *  @param  first  An input iterator.
-   *  @param  n      The number of copies to make.
-   *  @param  x      The source value.
+   *  @param  __first  An input iterator.
+   *  @param  __n      The number of copies to make.
+   *  @param  __x      The source value.
    *  @return   Nothing.
    *
    *  Like fill_n(), but does not require an initialized output range.
@@ -221,8 +233,14 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     {
       typedef typename iterator_traits<_ForwardIterator>::value_type
 	_ValueType;
+#if __cplusplus < 201103L
+      const bool __assignable = true;
+#else
+      // trivial types can have deleted assignment
+      const bool __assignable = is_copy_assignable<_ValueType>::value;
+#endif
 
-      std::__uninitialized_fill_n<__is_trivial(_ValueType)>::
+      std::__uninitialized_fill_n<__is_trivial(_ValueType) && __assignable>::
 	__uninit_fill_n(__first, __n, __x);
     }
 
@@ -241,8 +259,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       _ForwardIterator __cur = __result;
       __try
 	{
+	  typedef __gnu_cxx::__alloc_traits<_Allocator> __traits;
 	  for (; __first != __last; ++__first, ++__cur)
-	    __alloc.construct(std::__addressof(*__cur), *__first);
+	    __traits::construct(__alloc, std::__addressof(*__cur), *__first);
 	  return __cur;
 	}
       __catch(...)
@@ -269,6 +288,19 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 					 __result, __alloc);
     }
 
+  template<typename _InputIterator, typename _ForwardIterator,
+	   typename _Allocator>
+    inline _ForwardIterator
+    __uninitialized_move_if_noexcept_a(_InputIterator __first,
+				       _InputIterator __last,
+				       _ForwardIterator __result,
+				       _Allocator& __alloc)
+    {
+      return std::__uninitialized_copy_a
+	(_GLIBCXX_MAKE_MOVE_IF_NOEXCEPT_ITERATOR(__first),
+	 _GLIBCXX_MAKE_MOVE_IF_NOEXCEPT_ITERATOR(__last), __result, __alloc);
+    }
+
   template<typename _ForwardIterator, typename _Tp, typename _Allocator>
     void
     __uninitialized_fill_a(_ForwardIterator __first, _ForwardIterator __last,
@@ -277,8 +309,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       _ForwardIterator __cur = __first;
       __try
 	{
+	  typedef __gnu_cxx::__alloc_traits<_Allocator> __traits;
 	  for (; __cur != __last; ++__cur)
-	    __alloc.construct(std::__addressof(*__cur), __x);
+	    __traits::construct(__alloc, std::__addressof(*__cur), __x);
 	}
       __catch(...)
 	{
@@ -302,8 +335,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       _ForwardIterator __cur = __first;
       __try
 	{
+	  typedef __gnu_cxx::__alloc_traits<_Allocator> __traits;
 	  for (; __n > 0; --__n, ++__cur)
-	    __alloc.construct(std::__addressof(*__cur), __x);
+	    __traits::construct(__alloc, std::__addressof(*__cur), __x);
 	}
       __catch(...)
 	{
@@ -428,7 +462,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	}
     }
 
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus >= 201103L
   // Extensions: __uninitialized_default, __uninitialized_default_n,
   // __uninitialized_default_a, __uninitialized_default_n_a.
 
@@ -512,8 +546,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     {
       typedef typename iterator_traits<_ForwardIterator>::value_type
 	_ValueType;
+      // trivial types can have deleted assignment
+      const bool __assignable = is_copy_assignable<_ValueType>::value;
 
-      std::__uninitialized_default_1<__is_trivial(_ValueType)>::
+      std::__uninitialized_default_1<__is_trivial(_ValueType)
+				     && __assignable>::
 	__uninit_default(__first, __last);
     }
 
@@ -525,26 +562,14 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     {
       typedef typename iterator_traits<_ForwardIterator>::value_type
 	_ValueType;
+      // trivial types can have deleted assignment
+      const bool __assignable = is_copy_assignable<_ValueType>::value;
 
-      std::__uninitialized_default_n_1<__is_trivial(_ValueType)>::
+      std::__uninitialized_default_n_1<__is_trivial(_ValueType)
+				       && __assignable>::
 	__uninit_default_n(__first, __n);
     }
 
- template<typename _Tp, typename _Allocator>
-   inline auto
-   _Construct_default_a_impl(_Tp* __ptr, _Allocator& __alloc, void*)
-   -> decltype(__alloc.construct(__ptr))
-   { return __alloc.construct(__ptr); }
-
-  template<typename _Tp, typename _Allocator>
-   inline void
-   _Construct_default_a_impl(_Tp* __ptr, _Allocator& __alloc, ...)
-   { _Construct(__ptr); }
-
-  template<typename _Tp, typename _Allocator>
-   inline void
-   _Construct_default_a(_Tp* __ptr, _Allocator& __alloc)
-   { _Construct_default_a_impl(__ptr, __alloc, nullptr); }
 
   // __uninitialized_default_a
   // Fills [first, last) with std::distance(first, last) default
@@ -558,8 +583,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       _ForwardIterator __cur = __first;
       __try
 	{
+	  typedef __gnu_cxx::__alloc_traits<_Allocator> __traits;
 	  for (; __cur != __last; ++__cur)
-	    _Construct_default_a(std::__addressof(*__cur), __alloc);
+	    __traits::construct(__alloc, std::__addressof(*__cur));
 	}
       __catch(...)
 	{
@@ -587,8 +613,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       _ForwardIterator __cur = __first;
       __try
 	{
+	  typedef __gnu_cxx::__alloc_traits<_Allocator> __traits;
 	  for (; __n > 0; --__n, ++__cur)
-	    _Construct_default_a(std::__addressof(*__cur), __alloc);
+	    __traits::construct(__alloc, std::__addressof(*__cur));
 	}
       __catch(...)
 	{
@@ -634,10 +661,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
   /**
    *  @brief Copies the range [first,first+n) into result.
-   *  @param  first  An input iterator.
-   *  @param  n      The number of elements to copy.
-   *  @param  result An output iterator.
-   *  @return  result + n
+   *  @param  __first  An input iterator.
+   *  @param  __n      The number of elements to copy.
+   *  @param  __result An output iterator.
+   *  @return  __result + __n
    *
    *  Like copy_n(), but does not require an initialized output range.
   */

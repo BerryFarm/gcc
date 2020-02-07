@@ -1,5 +1,5 @@
 /* { dg-do run } */
-/* { dg-options "-O2 -msse2 -fno-stack-protector" } */
+/* { dg-options "-O2 -msse2" } */
 /* { dg-require-effective-target sse2 } */
 
 #ifndef CHECK_H
@@ -25,7 +25,7 @@ static void
 TEST (void)
 {
   union128d u;
-  double e[2] __attribute__ ((aligned (8))) = {0.0};
+  double e[2] __attribute__ ((aligned (16))) = {0.0};
 
   u.x = _mm_set_pd (2134.3343,1234.635654);
 

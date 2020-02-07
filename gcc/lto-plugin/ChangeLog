@@ -1,11 +1,88 @@
-2012-03-01  Release Manager
+2014-07-16  Release Manager
 
-	* GCC 4.6.3 released.
+	* GCC 4.9.1 released.
 
-2012-01-03  Richard Guenther  <rguenther@suse.de>
+2014-05-15  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
 
-	Backport from mainline
-	2011-08-10  Richard Guenther  <rguenther@suse.de>
+	PR lto/60981
+	* configure.ac: Check for -static-libgcc.
+	* configure: Regenerate.
+
+2014-04-22  Release Manager
+
+	* GCC 4.9.0 released.
+
+2014-04-02  Richard Biener  <rguenther@suse.de>
+
+	* lto-plugin.c (onload): Fail to load if -fno-use-linker-plugin
+	is set in COLLECT_GCC_OPTIONS.
+
+2014-03-28  Richard Biener  <rguenther@suse.de>
+
+	* lto-plugin.c (process_symtab): Handle EINTR and short reads.
+
+2014-03-17  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* configure.ac (ac_lto_plugin_ldflags): Set to -Wc,-static-libgcc
+	for gcc.
+	* configure: Regenerate.
+	* Makefile.am (AM_LDFLAGS): New variable.
+	(liblto_plugin_la_LDFLAGS): Add it.
+	* Makefile.in: Regenerate.
+
+2013-09-20  Alan Modra  <amodra@gmail.com>
+
+	* configure: Regenerate.
+
+2012-09-14  David Edelsohn  <dje.gcc@gmail.com>
+
+	* configure: Regenerated.
+
+2012-05-29  Joseph Myers  <joseph@codesourcery.com>
+
+	* lto-plugin.c: Fix typo.
+
+2012-05-16  H.J. Lu  <hongjiu.lu@intel.com>
+
+	* configure: Regenerated.
+
+2012-02-22  Kai Tietz  <ktietz@redhat.com>
+
+	PR lto/50616
+	* lto-plugin.c (PRI_LL): New macro.
+	(dump_symtab): Use PRI_LL instead of ll in print.
+	(process_symtab): Use PRI_LL instead of ll in scan.
+
+2011-12-20  Andreas Schwab  <schwab@linux-m68k.org>
+
+	* configure: Regenerate.
+
+2011-12-19  Andreas Schwab  <schwab@linux-m68k.org>
+
+	* configure: Regenerate.
+
+2011-11-21  Andreas Tobler  <andreast@fgznet.ch>
+
+	* configure: Regenerate.
+
+2011-10-02  Jan Hubicka  <jh@suse.cz>
+
+	PR lto/47247
+	* lto-plugin.c (get_symbols_v2): New variable.
+	(write_resolution): Use V2 API when available.
+	(onload): Handle LDPT_GET_SYMBOLS_V2.
+
+2011-09-30  H.J. Lu  <hongjiu.lu@intel.com>
+	    Andi Kleen  <ak@linux.intel.com>
+
+	PR lto/50568
+	* lto-plugin.c (sym_aux): Change id to unsigned long long.
+	(plugin_symtab): Likewise.
+	(dump_symtab): Likewise.
+	(resolve_conflicts): Likewise.
+	(process_symtab): Likewise.
+
+2011-08-10  Richard Guenther  <rguenther@suse.de>
 
 	PR bootstrap/49907
 	lto-plugin/
@@ -15,26 +92,14 @@
 	* Makefile.in: Likewise.
 	* aclocal.m4: Likewise.
 
-2011-11-20  Andreas Tobler  <andreast@fgznet.ch>
+2011-04-20  Jim Meyering  <meyering@redhat.com>
 
-	* configure: Regenerate.
-
-2011-10-26  Release Manager
-
-	* GCC 4.6.2 released.
-
-2011-06-27  Release Manager
-
-	* GCC 4.6.1 released.
+	* lto-plugin.c (free_1, free_2): Remove useless if-before-free.
 
 2011-04-05  Richard Guenther  <rguenther@suse.de>
 
 	PR bootstrap/48431
 	* lto-plugin.c (claim_file_handler): Do not declare vars in code.
-
-2011-03-25  Release Manager
-
-	* GCC 4.6.0 released.
 
 2011-02-13  Ralf Wildenhues  <Ralf.Wildenhues@gmx.de>
 
@@ -301,7 +366,7 @@
 	(claim_file_handler): Add n variable. Check return value of
 	process_symtab. Call resolve_conflicts.
 
-2010-07-27  Andi Kleen <ak@linux.intel.com>
+2010-07-27  Andi Kleen  <ak@linux.intel.com>
 
 	* lto-plugin.c (translate): Remove debug fprintf.
 
@@ -310,7 +375,7 @@
 	PR bootstrap/45042
 	* lto-plugin.c (translate): Cast to unsigned long.
 
-2010-07-23   Andi Kleen <ak@linux.intel.com>
+2010-07-23   Andi Kleen  <ak@linux.intel.com>
 
 	PR lto/44992
 	* lto-plugin.c (sym_aux): Add.

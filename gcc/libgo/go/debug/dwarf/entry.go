@@ -10,7 +10,10 @@
 
 package dwarf
 
-import "os"
+import (
+	"errors"
+	"strconv"
+)
 
 // a single entry's description: a sequence of attributes
 type abbrev struct {
@@ -29,7 +32,7 @@ type abbrevTable map[uint32]abbrev
 
 // ParseAbbrev returns the abbreviation table that starts at byte off
 // in the .debug_abbrev section.
-func (d *Data) parseAbbrev(off uint32) (abbrevTable, os.Error) {
+func (d *Data) parseAbbrev(off uint32) (abbrevTable, error) {
 	if m, ok := d.abbrevCache[off]; ok {
 		return m, nil
 	}
@@ -40,7 +43,7 @@ func (d *Data) parseAbbrev(off uint32) (abbrevTable, os.Error) {
 	} else {
 		data = data[off:]
 	}
-	b := makeBuf(d, "abbrev", 0, data, 0)
+	b := makeBuf(d, unknownFormat{}, "abbrev", 0, data)
 
 	// Error handling is simplified by the buf getters
 	// returning an endless stream of 0s after an error.
@@ -152,7 +155,7 @@ func (b *buf) entry(atab abbrevTable, ubase Offset) *Entry {
 		var val interface{}
 		switch fmt {
 		default:
-			b.error("unknown entry attr format")
+			b.error("unknown entry attr format 0x" + strconv.FormatInt(int64(fmt), 16))
 
 		// address
 		case formAddr:
@@ -185,10 +188,29 @@ func (b *buf) entry(atab abbrevTable, ubase Offset) *Entry {
 		// flag
 		case formFlag:
 			val = b.uint8() == 1
+		// New in DWARF 4.
+		case formFlagPresent:
+			// The attribute is implicitly indicated as present, and no value is
+			// encoded in the debugging information entry itself.
+			val = true
 
 		// reference to other entry
 		case formRefAddr:
-			val = Offset(b.addr())
+			vers := b.format.version()
+			if vers == 0 {
+				b.error("unknown version for DW_FORM_ref_addr")
+			} else if vers == 2 {
+				val = Offset(b.addr())
+			} else {
+				is64, known := b.format.dwarf64()
+				if !known {
+					b.error("unknown size for DW_FORM_ref_addr")
+				} else if is64 {
+					val = Offset(b.uint64())
+				} else {
+					val = Offset(b.uint32())
+				}
+			}
 		case formRef1:
 			val = Offset(b.uint8()) + ubase
 		case formRef2:
@@ -208,13 +230,37 @@ func (b *buf) entry(atab abbrevTable, ubase Offset) *Entry {
 			if b.err != nil {
 				return nil
 			}
-			b1 := makeBuf(b.dwarf, "str", 0, b.dwarf.str, 0)
+			b1 := makeBuf(b.dwarf, unknownFormat{}, "str", 0, b.dwarf.str)
 			b1.skip(int(off))
 			val = b1.string()
 			if b1.err != nil {
 				b.err = b1.err
 				return nil
 			}
+
+		// lineptr, loclistptr, macptr, rangelistptr
+		// New in DWARF 4, but clang can generate them with -gdwarf-2.
+		// Section reference, replacing use of formData4 and formData8.
+		case formSecOffset:
+			is64, known := b.format.dwarf64()
+			if !known {
+				b.error("unknown size for DW_FORM_sec_offset")
+			} else if is64 {
+				val = int64(b.uint64())
+			} else {
+				val = int64(b.uint32())
+			}
+
+		// exprloc
+		// New in DWARF 4.
+		case formExprloc:
+			val = b.bytes(int(b.uint()))
+
+		// reference
+		// New in DWARF 4.
+		case formRefSig8:
+			// 64-bit type signature.
+			val = b.uint64()
 		}
 		e.Field[i].Val = val
 	}
@@ -232,7 +278,7 @@ func (b *buf) entry(atab abbrevTable, ubase Offset) *Entry {
 type Reader struct {
 	b            buf
 	d            *Data
-	err          os.Error
+	err          error
 	unit         int
 	lastChildren bool   // .Children of last entry returned by Next
 	lastSibling  Offset // .Val(AttrSibling) of last entry returned by Next
@@ -243,6 +289,15 @@ type Reader struct {
 func (d *Data) Reader() *Reader {
 	r := &Reader{d: d}
 	r.Seek(0)
+	return r
+}
+
+// unitReader returns a new reader starting at a specific unit.
+func (d *Data) unitReader(i int) *Reader {
+	r := &Reader{d: d}
+	r.unit = i
+	u := &d.unit[i]
+	r.b = makeBuf(d, u, "info", u.off, u.data)
 	return r
 }
 
@@ -258,7 +313,7 @@ func (r *Reader) Seek(off Offset) {
 		}
 		u := &d.unit[0]
 		r.unit = 0
-		r.b = makeBuf(r.d, "info", u.off, u.data, u.addrsize)
+		r.b = makeBuf(r.d, u, "info", u.off, u.data)
 		return
 	}
 
@@ -269,11 +324,11 @@ func (r *Reader) Seek(off Offset) {
 		u = &d.unit[i]
 		if u.off <= off && off < u.off+Offset(len(u.data)) {
 			r.unit = i
-			r.b = makeBuf(r.d, "info", off, u.data[off-u.off:], u.addrsize)
+			r.b = makeBuf(r.d, u, "info", off, u.data[off-u.off:])
 			return
 		}
 	}
-	r.err = os.NewError("offset out of range")
+	r.err = errors.New("offset out of range")
 }
 
 // maybeNextUnit advances to the next unit if this one is finished.
@@ -281,7 +336,7 @@ func (r *Reader) maybeNextUnit() {
 	for len(r.b.data) == 0 && r.unit+1 < len(r.d.unit) {
 		r.unit++
 		u := &r.d.unit[r.unit]
-		r.b = makeBuf(r.d, "info", u.off, u.data, u.addrsize)
+		r.b = makeBuf(r.d, u, "info", u.off, u.data)
 	}
 }
 
@@ -289,7 +344,7 @@ func (r *Reader) maybeNextUnit() {
 // It returns nil, nil when it reaches the end of the section.
 // It returns an error if the current offset is invalid or the data at the
 // offset cannot be decoded as a valid Entry.
-func (r *Reader) Next() (*Entry, os.Error) {
+func (r *Reader) Next() (*Entry, error) {
 	if r.err != nil {
 		return nil, r.err
 	}

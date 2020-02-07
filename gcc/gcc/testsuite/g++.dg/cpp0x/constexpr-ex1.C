@@ -1,5 +1,4 @@
-// { dg-do compile }
-// { dg-options "-std=gnu++0x" }
+// { dg-do compile { target c++11 } }
 
 // From N2235
 
@@ -88,7 +87,7 @@ struct resource {
   }
 };
 constexpr resource f(resource d)
-{ return d; }                  // { dg-error "not .constexpr" }
-constexpr resource d = f(9);   // { dg-error "resource" }
+{ return d; }                  // { dg-error "non-constexpr" }
+constexpr resource d = f(9);   // { dg-message "constexpr" }
 
 // 4.4 floating-point constant expressions

@@ -1,5 +1,5 @@
 /* ANSI-C code produced by gperf version 3.0.3 */
-/* Command-line: gperf -o -C -E -k '1-6,$' -j1 -D -N libc_name_p -L ANSI-C /home/ryan/spartan/tools/gcc/branches/gcc_4_6_ndk_branch/linux-x86-o-ntoarmeabi/../gcc/cp/cfns.gperf  */
+/* Command-line: gperf -o -C -E -k '1-6,$' -j1 -D -N libc_name_p -L ANSI-C cfns.gperf  */
 
 #if !((' ' == 32) && ('!' == 33) && ('"' == 34) && ('#' == 35) \
       && ('%' == 37) && ('&' == 38) && ('\'' == 39) && ('(' == 40) \
@@ -28,9 +28,9 @@
 #error "gperf generated tables don't work with this execution character set. Please report a bug to <bug-gnu-gperf@gnu.org>."
 #endif
 
-#line 1 "/home/ryan/spartan/tools/gcc/branches/gcc_4_6_ndk_branch/linux-x86-o-ntoarmeabi/../gcc/cp/cfns.gperf"
+#line 1 "cfns.gperf"
 
-/* Copyright (C) 2000, 2003 Free Software Foundation, Inc.
+/* Copyright (C) 2000-2014 Free Software Foundation, Inc.
 
 This file is part of GCC.
 

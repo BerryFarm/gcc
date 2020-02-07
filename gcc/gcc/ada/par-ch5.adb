@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2010, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -24,8 +24,10 @@
 ------------------------------------------------------------------------------
 
 pragma Style_Checks (All_Checks);
---  Turn off subprogram body ordering check. Subprograms are in order
---  by RM section rather than alphabetical
+--  Turn off subprogram body ordering check. Subprograms are in order by RM
+--  section rather than alphabetical.
+
+with Sinfo.CN; use Sinfo.CN;
 
 separate (Par)
 package body Ch5 is
@@ -445,7 +447,7 @@ package body Ch5 is
 
                   --  Otherwise we treat THEN as some kind of mess where we did
                   --  not see the associated IF, but we pick up assuming it had
-                  --  been there!
+                  --  been there.
 
                   Restore_Scan_State (Scan_State); -- to THEN
                   Append_To (Statement_List, P_If_Statement);
@@ -499,10 +501,28 @@ package body Ch5 is
                   --  we want to speed up as much as possible.
 
                   elsif Token = Tok_Semicolon then
-                     Append_To (Statement_List,
-                       P_Statement_Name (Id_Node));
+                     Change_Name_To_Procedure_Call_Statement (Id_Node);
+                     Append_To (Statement_List, Id_Node);
                      Scan; -- past semicolon
                      Statement_Required := False;
+
+                     --  Here is the special test for a suspicious label, more
+                     --  accurately a suspicious name, which we think perhaps
+                     --  should have been a label. If next token is one of
+                     --  LOOP, FOR, WHILE, DECLARE, BEGIN, then make an entry
+                     --  in the suspicious label table.
+
+                     if Token = Tok_Loop    or else
+                        Token = Tok_For     or else
+                        Token = Tok_While   or else
+                        Token = Tok_Declare or else
+                        Token = Tok_Begin
+                     then
+                        Suspicious_Labels.Append
+                          ((Proc_Call     => Id_Node,
+                            Semicolon_Loc => Prev_Token_Ptr,
+                            Start_Token   => Token_Ptr));
+                     end if;
 
                   --  Check for case of "go to" in place of "goto"
 
@@ -550,7 +570,7 @@ package body Ch5 is
 
                            --  We will set Error_name as the Block_Label since
                            --  we really don't know which of the labels might
-                           --  be used at the end of the loop or block!
+                           --  be used at the end of the loop or block.
 
                            Block_Label := Error_Name;
 
@@ -652,8 +672,8 @@ package body Ch5 is
                      --  means that the item we just scanned was a call.
 
                      elsif Token = Tok_Semicolon then
-                        Append_To (Statement_List,
-                          P_Statement_Name (Name_Node));
+                        Change_Name_To_Procedure_Call_Statement (Name_Node);
+                        Append_To (Statement_List, Name_Node);
                         Scan; -- past semicolon
                         Statement_Required := False;
 
@@ -727,8 +747,8 @@ package body Ch5 is
                         --  call with no parameters.
 
                         if Token_Is_At_Start_Of_Line then
-                           Append_To (Statement_List,
-                             P_Statement_Name (Id_Node));
+                           Change_Name_To_Procedure_Call_Statement (Id_Node);
+                           Append_To (Statement_List, Id_Node);
                            T_Semicolon; -- to give error message
                            Statement_Required := False;
 
@@ -769,8 +789,8 @@ package body Ch5 is
                      Append_To (Statement_List,
                        P_Assignment_Statement (Name_Node));
                   else
-                     Append_To (Statement_List,
-                       P_Statement_Name (Name_Node));
+                     Change_Name_To_Procedure_Call_Statement (Name_Node);
+                     Append_To (Statement_List, Name_Node);
                   end if;
 
                   TF_Semicolon;
@@ -954,68 +974,6 @@ package body Ch5 is
    -- 5.1  Statement --
    --------------------
 
-   --  Parsed by P_Sequence_Of_Statements (5.1), except for the case
-   --  of a statement of the form of a name, which is handled here. The
-   --  argument passed in is the tree for the name which has been scanned
-   --  The returned value is the corresponding statement form.
-
-   --  This routine is also used by Par.Prag for processing the procedure
-   --  call that appears as the second argument of a pragma Assert.
-
-   --  Error recovery: cannot raise Error_Resync
-
-   function P_Statement_Name (Name_Node : Node_Id) return Node_Id is
-      Stmt_Node : Node_Id;
-
-   begin
-      --  Case of Indexed component, which is a procedure call with arguments
-
-      if Nkind (Name_Node) = N_Indexed_Component then
-         declare
-            Prefix_Node : constant Node_Id := Prefix (Name_Node);
-            Exprs_Node  : constant List_Id := Expressions (Name_Node);
-
-         begin
-            Change_Node (Name_Node, N_Procedure_Call_Statement);
-            Set_Name (Name_Node, Prefix_Node);
-            Set_Parameter_Associations (Name_Node, Exprs_Node);
-            return Name_Node;
-         end;
-
-      --  Case of function call node, which is a really a procedure call
-
-      elsif Nkind (Name_Node) = N_Function_Call then
-         declare
-            Fname_Node  : constant Node_Id := Name (Name_Node);
-            Params_List : constant List_Id :=
-                            Parameter_Associations (Name_Node);
-
-         begin
-            Change_Node (Name_Node, N_Procedure_Call_Statement);
-            Set_Name (Name_Node, Fname_Node);
-            Set_Parameter_Associations (Name_Node, Params_List);
-            return Name_Node;
-         end;
-
-      --  Case of call to attribute that denotes a procedure. Here we
-      --  just leave the attribute reference unchanged.
-
-      elsif Nkind (Name_Node) = N_Attribute_Reference
-        and then Is_Procedure_Attribute_Name (Attribute_Name (Name_Node))
-      then
-         return Name_Node;
-
-      --  All other cases of names are parameterless procedure calls
-
-      else
-         Stmt_Node :=
-           New_Node (N_Procedure_Call_Statement, Sloc (Name_Node));
-         Set_Name (Stmt_Node, Name_Node);
-         return Stmt_Node;
-      end if;
-
-   end P_Statement_Name;
-
    ---------------------------
    -- 5.1  Simple Statement --
    ---------------------------
@@ -1145,8 +1103,7 @@ package body Ch5 is
       procedure Check_Then_Column;
       --  This procedure carries out the style checks for a THEN token
       --  Note that the caller has set Loc to the Source_Ptr value for
-      --  the previous IF or ELSIF token. These checks apply only to a
-      --  THEN at the start of a line.
+      --  the previous IF or ELSIF token.
 
       function Else_Should_Be_Elsif return Boolean;
       --  An internal routine used to do a special error recovery check when
@@ -1184,7 +1141,7 @@ package body Ch5 is
 
       procedure Check_Then_Column is
       begin
-         if Token_Is_At_Start_Of_Line and then Token = Tok_Then then
+         if Token = Tok_Then then
             Check_If_Column;
 
             if Style_Check then
@@ -1316,11 +1273,12 @@ package body Ch5 is
    --  CONDITION ::= boolean_EXPRESSION
 
    function P_Condition return Node_Id is
-      Cond : Node_Id;
-
    begin
-      Cond := P_Expression_No_Right_Paren;
+      return P_Condition (P_Expression_No_Right_Paren);
+   end P_Condition;
 
+   function P_Condition (Cond : Node_Id) return Node_Id is
+   begin
       --  It is never possible for := to follow a condition, so if we get
       --  a := we assume it is a mistyped equality. Note that we do not try
       --  to reconstruct the tree correctly in this case, but we do at least
@@ -1336,13 +1294,21 @@ package body Ch5 is
 
          return Cond;
 
-      --  Otherwise check for redundant parens
+      --  Otherwise check for redundant parentheses
+
+      --  If the condition is a conditional or a quantified expression, it is
+      --  parenthesized in the context of a condition, because of a separate
+      --  syntax rule.
 
       else
-         if Style_Check
-           and then Paren_Count (Cond) > 0
-         then
-            Style.Check_Xtra_Parens (First_Sloc (Cond));
+         if Style_Check and then Paren_Count (Cond) > 0 then
+            if not Nkind_In (Cond, N_If_Expression,
+                                   N_Case_Expression,
+                                   N_Quantified_Expression)
+              or else Paren_Count (Cond) > 1
+            then
+               Style.Check_Xtra_Parens (First_Sloc (Cond));
+            end if;
          end if;
 
          --  And return the result
@@ -1708,10 +1674,7 @@ package body Ch5 is
       --  during analysis of the loop parameter specification.
 
       if Token = Tok_Of or else Token = Tok_Colon then
-         if Ada_Version < Ada_2012 then
-            Error_Msg_SC ("iterator is an Ada2012 feature");
-         end if;
-
+         Error_Msg_Ada_2012_Feature ("iterator", Token_Ptr);
          return P_Iterator_Specification (ID_Node);
       end if;
 
@@ -1771,6 +1734,18 @@ package body Ch5 is
 
       elsif Token = Tok_In then
          Scan;  --  past IN
+
+      elsif Prev_Token = Tok_In
+        and then Present (Subtype_Indication (Node1))
+      then
+         --  Simplest recovery is to transform it into an element iterator.
+         --  Error message on 'in" has already been emitted when parsing the
+         --  optional constraint.
+
+         Set_Of_Present (Node1);
+         Error_Msg_N
+           ("subtype indication is only legal on an element iterator",
+              Subtype_Indication (Node1));
 
       else
          return Error;
@@ -2049,9 +2024,7 @@ package body Ch5 is
 
    procedure Parse_Decls_Begin_End (Parent : Node_Id) is
       Body_Decl    : Node_Id;
-      Body_Sloc    : Source_Ptr;
       Decls        : List_Id;
-      Decl         : Node_Id;
       Parent_Nkind : Node_Kind;
       Spec_Node    : Node_Id;
       HSS          : Node_Id;
@@ -2110,42 +2083,8 @@ package body Ch5 is
    begin
       Decls := P_Declarative_Part;
 
-      --  Check for misplacement of later vs basic declarations in Ada 83
-
       if Ada_Version = Ada_83 then
-         Decl := First (Decls);
-
-         --  Loop through sequence of basic declarative items
-
-         Outer : while Present (Decl) loop
-            if Nkind (Decl) /= N_Subprogram_Body
-              and then Nkind (Decl) /= N_Package_Body
-              and then Nkind (Decl) /= N_Task_Body
-              and then Nkind (Decl) not in  N_Body_Stub
-            then
-               Next (Decl);
-
-            --  Once a body is encountered, we only allow later declarative
-            --  items. The inner loop checks the rest of the list.
-
-            else
-               Body_Sloc := Sloc (Decl);
-
-               Inner : while Present (Decl) loop
-                  if Nkind (Decl) not in N_Later_Decl_Item
-                    and then Nkind (Decl) /= N_Pragma
-                  then
-                     if Ada_Version = Ada_83 then
-                        Error_Msg_Sloc := Body_Sloc;
-                        Error_Msg_N
-                          ("(Ada 83) decl cannot appear after body#", Decl);
-                     end if;
-                  end if;
-
-                  Next (Decl);
-               end loop Inner;
-            end if;
-         end loop Outer;
+         Check_Later_Vs_Basic_Declarations (Decls, During_Parsing => True);
       end if;
 
       --  Here is where we deal with the case of IS used instead of semicolon.

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2004-2010, Free Software Foundation, Inc.         --
+--          Copyright (C) 2004-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -308,7 +308,6 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
          function New_Node return Count_Type is
             Result : Count_Type;
-
          begin
             Allocate (Target, Result);
             return Result;
@@ -357,14 +356,10 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
    function Ceiling (Container : Set; Item : Element_Type) return Cursor is
       Node : constant Count_Type :=
-               Element_Keys.Ceiling (Container, Item);
-
+        Element_Keys.Ceiling (Container, Item);
    begin
-      if Node = 0 then
-         return No_Element;
-      end if;
-
-      return Cursor'(Container'Unrestricted_Access, Node);
+      return (if Node = 0 then No_Element
+              else Cursor'(Container'Unrestricted_Access, Node));
    end Ceiling;
 
    -----------
@@ -384,6 +379,35 @@ package body Ada.Containers.Bounded_Ordered_Sets is
    begin
       return Node.Color;
    end Color;
+
+   ------------------------
+   -- Constant_Reference --
+   ------------------------
+
+   function Constant_Reference
+     (Container : aliased Set;
+      Position  : Cursor) return Constant_Reference_Type
+   is
+   begin
+      if Position.Container = null then
+         raise Constraint_Error with "Position cursor has no element";
+      end if;
+
+      if Position.Container /= Container'Unrestricted_Access then
+         raise Program_Error with
+           "Position cursor designates wrong container";
+      end if;
+
+      pragma Assert
+        (Vet (Container, Position.Node),
+         "bad cursor in Constant_Reference");
+
+      declare
+         N : Node_Type renames Container.Nodes (Position.Node);
+      begin
+         return (Element => N.Element'Access);
+      end;
+   end Constant_Reference;
 
    --------------
    -- Contains --
@@ -407,10 +431,8 @@ package body Ada.Containers.Bounded_Ordered_Sets is
    begin
       if Capacity = 0 then
          C := Source.Length;
-
       elsif Capacity >= Source.Length then
          C := Capacity;
-
       else
          raise Capacity_Error with "Capacity value too small";
       end if;
@@ -461,7 +483,6 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
    procedure Delete_First (Container : in out Set) is
       X : constant Count_Type := Container.First;
-
    begin
       if X /= 0 then
          Tree_Operations.Delete_Node_Sans_Free (Container, X);
@@ -475,7 +496,6 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
    procedure Delete_Last (Container : in out Set) is
       X : constant Count_Type := Container.Last;
-
    begin
       if X /= 0 then
          Tree_Operations.Delete_Node_Sans_Free (Container, X);
@@ -515,13 +535,7 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
    function Equivalent_Elements (Left, Right : Element_Type) return Boolean is
    begin
-      if Left < Right
-        or else Right < Left
-      then
-         return False;
-      else
-         return True;
-      end if;
+      return (if Left < Right or else Right < Left then False else True);
    end Equivalent_Elements;
 
    ---------------------
@@ -541,13 +555,9 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
       function Is_Equivalent_Node_Node (L, R : Node_Type) return Boolean is
       begin
-         if L.Element < R.Element then
-            return False;
-         elsif R.Element < L.Element then
-            return False;
-         else
-            return True;
-         end if;
+         return (if L.Element < R.Element then False
+                 elsif R.Element < L.Element then False
+                 else True);
       end Is_Equivalent_Node_Node;
 
    --  Start of processing for Equivalent_Sets
@@ -562,7 +572,6 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
    procedure Exclude (Container : in out Set; Item : Element_Type) is
       X : constant Count_Type := Element_Keys.Find (Container, Item);
-
    begin
       if X /= 0 then
          Tree_Operations.Delete_Node_Sans_Free (Container, X);
@@ -570,19 +579,30 @@ package body Ada.Containers.Bounded_Ordered_Sets is
       end if;
    end Exclude;
 
+   --------------
+   -- Finalize --
+   --------------
+
+   procedure Finalize (Object : in out Iterator) is
+   begin
+      if Object.Container /= null then
+         declare
+            B : Natural renames Object.Container.all.Busy;
+         begin
+            B := B - 1;
+         end;
+      end if;
+   end Finalize;
+
    ----------
    -- Find --
    ----------
 
    function Find (Container : Set; Item : Element_Type) return Cursor is
       Node : constant Count_Type := Element_Keys.Find (Container, Item);
-
    begin
-      if Node = 0 then
-         return No_Element;
-      end if;
-
-      return Cursor'(Container'Unrestricted_Access, Node);
+      return (if Node = 0 then No_Element
+              else Cursor'(Container'Unrestricted_Access, Node));
    end Find;
 
    -----------
@@ -591,11 +611,30 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
    function First (Container : Set) return Cursor is
    begin
-      if Container.First = 0 then
-         return No_Element;
-      end if;
+      return (if Container.First = 0 then No_Element
+              else Cursor'(Container'Unrestricted_Access, Container.First));
+   end First;
 
-      return Cursor'(Container'Unrestricted_Access, Container.First);
+   function First (Object : Iterator) return Cursor is
+   begin
+      --  The value of the iterator object's Node component influences the
+      --  behavior of the First (and Last) selector function.
+
+      --  When the Node component is 0, this means the iterator object was
+      --  constructed without a start expression, in which case the (forward)
+      --  iteration starts from the (logical) beginning of the entire sequence
+      --  of items (corresponding to Container.First, for a forward iterator).
+
+      --  Otherwise, this is iteration over a partial sequence of items. When
+      --  the Node component is positive, the iterator object was constructed
+      --  with a start expression, that specifies the position from which the
+      --  (forward) partial iteration begins.
+
+      if Object.Node = 0 then
+         return Bounded_Ordered_Sets.First (Object.Container.all);
+      else
+         return Cursor'(Object.Container, Object.Node);
+      end if;
    end First;
 
    -------------------
@@ -617,13 +656,9 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
    function Floor (Container : Set; Item : Element_Type) return Cursor is
       Node : constant Count_Type := Element_Keys.Floor (Container, Item);
-
    begin
-      if Node = 0 then
-         return No_Element;
-      end if;
-
-      return Cursor'(Container'Unrestricted_Access, Node);
+      return (if Node = 0 then No_Element
+              else Cursor'(Container'Unrestricted_Access, Node));
    end Floor;
 
    ------------------
@@ -663,15 +698,33 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
       function Ceiling (Container : Set; Key : Key_Type) return Cursor is
          Node : constant Count_Type :=
-                  Key_Keys.Ceiling (Container, Key);
+           Key_Keys.Ceiling (Container, Key);
+      begin
+         return (if Node = 0 then No_Element
+                 else Cursor'(Container'Unrestricted_Access, Node));
+      end Ceiling;
+
+      ------------------------
+      -- Constant_Reference --
+      ------------------------
+
+      function Constant_Reference
+        (Container : aliased Set;
+         Key       : Key_Type) return Constant_Reference_Type
+      is
+         Node : constant Count_Type := Key_Keys.Find (Container, Key);
 
       begin
          if Node = 0 then
-            return No_Element;
+            raise Constraint_Error with "key not in set";
          end if;
 
-         return Cursor'(Container'Unrestricted_Access, Node);
-      end Ceiling;
+         declare
+            N : Node_Type renames Container.Nodes (Node);
+         begin
+            return (Element => N.Element'Access);
+         end;
+      end Constant_Reference;
 
       --------------
       -- Contains --
@@ -719,13 +772,7 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
       function Equivalent_Keys (Left, Right : Key_Type) return Boolean is
       begin
-         if Left < Right
-           or else Right < Left
-         then
-            return False;
-         else
-            return True;
-         end if;
+         return (if Left < Right or else Right < Left then False else True);
       end Equivalent_Keys;
 
       -------------
@@ -734,7 +781,6 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
       procedure Exclude (Container : in out Set; Key : Key_Type) is
          X : constant Count_Type := Key_Keys.Find (Container, Key);
-
       begin
          if X /= 0 then
             Tree_Operations.Delete_Node_Sans_Free (Container, X);
@@ -748,13 +794,9 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
       function Find (Container : Set; Key : Key_Type) return Cursor is
          Node : constant Count_Type := Key_Keys.Find (Container, Key);
-
       begin
-         if Node = 0 then
-            return No_Element;
-         end if;
-
-         return Cursor'(Container'Unrestricted_Access, Node);
+         return (if Node = 0 then No_Element
+                 else Cursor'(Container'Unrestricted_Access, Node));
       end Find;
 
       -----------
@@ -763,13 +805,9 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
       function Floor (Container : Set; Key : Key_Type) return Cursor is
          Node : constant Count_Type := Key_Keys.Floor (Container, Key);
-
       begin
-         if Node = 0 then
-            return No_Element;
-         end if;
-
-         return Cursor'(Container'Unrestricted_Access, Node);
+         return (if Node = 0 then No_Element
+                 else Cursor'(Container'Unrestricted_Access, Node));
       end Floor;
 
       -------------------------
@@ -812,6 +850,69 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
          return Key (Position.Container.Nodes (Position.Node).Element);
       end Key;
+
+      ----------
+      -- Read --
+      ----------
+
+      procedure  Read
+        (Stream : not null access Root_Stream_Type'Class;
+         Item   : out Reference_Type)
+      is
+      begin
+         raise Program_Error with "attempt to stream reference";
+      end Read;
+
+      ------------------------------
+      -- Reference_Preserving_Key --
+      ------------------------------
+
+      function Reference_Preserving_Key
+        (Container : aliased in out Set;
+         Position  : Cursor) return Reference_Type
+      is
+      begin
+         if Position.Container = null then
+            raise Constraint_Error with "Position cursor has no element";
+         end if;
+
+         if Position.Container /= Container'Unrestricted_Access then
+            raise Program_Error with
+              "Position cursor designates wrong container";
+         end if;
+
+         pragma Assert
+           (Vet (Container, Position.Node),
+            "bad cursor in function Reference_Preserving_Key");
+
+         --  Some form of finalization will be required in order to actually
+         --  check that the key-part of the element designated by Position has
+         --  not changed.  ???
+
+         declare
+            N : Node_Type renames Container.Nodes (Position.Node);
+         begin
+            return (Element => N.Element'Access);
+         end;
+      end Reference_Preserving_Key;
+
+      function Reference_Preserving_Key
+        (Container : aliased in out Set;
+         Key       : Key_Type) return Reference_Type
+      is
+         Node : constant Count_Type := Key_Keys.Find (Container, Key);
+
+      begin
+         if Node = 0 then
+            raise Constraint_Error with "key not in set";
+         end if;
+
+         declare
+            N : Node_Type renames Container.Nodes (Node);
+         begin
+            return (Element => N.Element'Access);
+         end;
+      end Reference_Preserving_Key;
 
       -------------
       -- Replace --
@@ -856,6 +957,9 @@ package body Ada.Containers.Bounded_Ordered_Sets is
          pragma Assert (Vet (Container, Position.Node),
                         "bad cursor in Update_Element_Preserving_Key");
 
+         --  Per AI05-0022, the container implementation is required to detect
+         --  element tampering by a generic actual subprogram.
+
          declare
             N : Node_Type renames Container.Nodes (Position.Node);
             E : Element_Type renames N.Element;
@@ -864,12 +968,15 @@ package body Ada.Containers.Bounded_Ordered_Sets is
             B : Natural renames Container.Busy;
             L : Natural renames Container.Lock;
 
+            Eq : Boolean;
+
          begin
             B := B + 1;
             L := L + 1;
 
             begin
                Process (E);
+               Eq := Equivalent_Keys (K, Key (E));
             exception
                when others =>
                   L := L - 1;
@@ -880,7 +987,7 @@ package body Ada.Containers.Bounded_Ordered_Sets is
             L := L - 1;
             B := B - 1;
 
-            if Equivalent_Keys (K, Key (E)) then
+            if Eq then
                return;
             end if;
          end;
@@ -891,6 +998,17 @@ package body Ada.Containers.Bounded_Ordered_Sets is
          raise Program_Error with "key was modified";
       end Update_Element_Preserving_Key;
 
+      -----------
+      -- Write --
+      -----------
+
+      procedure Write
+        (Stream : not null access Root_Stream_Type'Class;
+         Item   : Reference_Type)
+      is
+      begin
+         raise Program_Error with "attempt to stream reference";
+      end Write;
    end Generic_Keys;
 
    -----------------
@@ -992,7 +1110,6 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
       function New_Node return Count_Type is
          Result : Count_Type;
-
       begin
          Allocate (Container, Result);
          return Result;
@@ -1056,7 +1173,6 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
       function New_Node return Count_Type is
          Result : Count_Type;
-
       begin
          Allocate (Dst_Set, Result);
          return Result;
@@ -1185,17 +1301,109 @@ package body Ada.Containers.Bounded_Ordered_Sets is
       B := B - 1;
    end Iterate;
 
+   function Iterate (Container : Set)
+     return Set_Iterator_Interfaces.Reversible_Iterator'class
+   is
+      B : Natural renames Container'Unrestricted_Access.all.Busy;
+
+   begin
+      --  The value of the Node component influences the behavior of the First
+      --  and Last selector functions of the iterator object. When the Node
+      --  component is 0 (as is the case here), this means the iterator object
+      --  was constructed without a start expression. This is a complete
+      --  iterator, meaning that the iteration starts from the (logical)
+      --  beginning of the sequence of items.
+
+      --  Note: For a forward iterator, Container.First is the beginning, and
+      --  for a reverse iterator, Container.Last is the beginning.
+
+      return It : constant Iterator :=
+        Iterator'(Limited_Controlled with
+                    Container => Container'Unrestricted_Access,
+                    Node      => 0)
+      do
+         B := B + 1;
+      end return;
+   end Iterate;
+
+   function Iterate (Container : Set; Start : Cursor)
+     return Set_Iterator_Interfaces.Reversible_Iterator'class
+   is
+      B  : Natural renames Container'Unrestricted_Access.all.Busy;
+
+   begin
+      --  It was formerly the case that when Start = No_Element, the partial
+      --  iterator was defined to behave the same as for a complete iterator,
+      --  and iterate over the entire sequence of items. However, those
+      --  semantics were unintuitive and arguably error-prone (it is too easy
+      --  to accidentally create an endless loop), and so they were changed,
+      --  per the ARG meeting in Denver on 2011/11. However, there was no
+      --  consensus about what positive meaning this corner case should have,
+      --  and so it was decided to simply raise an exception. This does imply,
+      --  however, that it is not possible to use a partial iterator to specify
+      --  an empty sequence of items.
+
+      if Start = No_Element then
+         raise Constraint_Error with
+           "Start position for iterator equals No_Element";
+      end if;
+
+      if Start.Container /= Container'Unrestricted_Access then
+         raise Program_Error with
+           "Start cursor of Iterate designates wrong set";
+      end if;
+
+      pragma Assert (Vet (Container, Start.Node),
+                     "Start cursor of Iterate is bad");
+
+      --  The value of the Node component influences the behavior of the First
+      --  and Last selector functions of the iterator object. When the Node
+      --  component is positive (as is the case here), it means that this
+      --  is a partial iteration, over a subset of the complete sequence of
+      --  items. The iterator object was constructed with a start expression,
+      --  indicating the position from which the iteration begins. (Note that
+      --  the start position has the same value irrespective of whether this
+      --  is a forward or reverse iteration.)
+
+      return It : constant Iterator :=
+        Iterator'(Limited_Controlled with
+                    Container => Container'Unrestricted_Access,
+                    Node      => Start.Node)
+      do
+         B := B + 1;
+      end return;
+   end Iterate;
+
    ----------
    -- Last --
    ----------
 
    function Last (Container : Set) return Cursor is
    begin
-      if Container.Last = 0 then
-         return No_Element;
-      end if;
+      return (if Container.Last = 0 then No_Element
+              else Cursor'(Container'Unrestricted_Access, Container.Last));
+   end Last;
 
-      return Cursor'(Container'Unrestricted_Access, Container.Last);
+   function Last (Object : Iterator) return Cursor is
+   begin
+      --  The value of the iterator object's Node component influences the
+      --  behavior of the Last (and First) selector function.
+
+      --  When the Node component is 0, this means the iterator object was
+      --  constructed without a start expression, in which case the (reverse)
+      --  iteration starts from the (logical) beginning of the entire sequence
+      --  (corresponding to Container.Last, for a reverse iterator).
+
+      --  Otherwise, this is iteration over a partial sequence of items. When
+      --  the Node component is positive, the iterator object was constructed
+      --  with a start expression, that specifies the position from which the
+      --  (reverse) partial iteration begins.
+
+      if Object.Node = 0 then
+         return Bounded_Ordered_Sets.Last (Object.Container.all);
+      else
+         return Cursor'(Object.Container, Object.Node);
+      end if;
    end Last;
 
    ------------------
@@ -1244,7 +1452,8 @@ package body Ada.Containers.Bounded_Ordered_Sets is
            "attempt to tamper with cursors (container is busy)";
       end if;
 
-      Assign (Target => Target, Source => Source);
+      Target.Assign (Source);
+      Source.Clear;
    end Move;
 
    ----------
@@ -1262,7 +1471,7 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
       declare
          Node : constant Count_Type :=
-                  Tree_Operations.Next (Position.Container.all, Position.Node);
+           Tree_Operations.Next (Position.Container.all, Position.Node);
 
       begin
          if Node = 0 then
@@ -1276,6 +1485,20 @@ package body Ada.Containers.Bounded_Ordered_Sets is
    procedure Next (Position : in out Cursor) is
    begin
       Position := Next (Position);
+   end Next;
+
+   function Next (Object : Iterator; Position : Cursor) return Cursor is
+   begin
+      if Position.Container = null then
+         return No_Element;
+      end if;
+
+      if Position.Container /= Object.Container then
+         raise Program_Error with
+           "Position cursor of Next designates wrong set";
+      end if;
+
+      return Next (Position);
    end Next;
 
    -------------
@@ -1309,22 +1532,30 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
       declare
          Node : constant Count_Type :=
-                  Tree_Operations.Previous
-                    (Position.Container.all,
-                     Position.Node);
-
+           Tree_Operations.Previous (Position.Container.all, Position.Node);
       begin
-         if Node = 0 then
-            return No_Element;
-         end if;
-
-         return Cursor'(Position.Container, Node);
+         return (if Node = 0 then No_Element
+                 else Cursor'(Position.Container, Node));
       end;
    end Previous;
 
    procedure Previous (Position : in out Cursor) is
    begin
       Position := Previous (Position);
+   end Previous;
+
+   function Previous (Object : Iterator; Position : Cursor) return Cursor is
+   begin
+      if Position.Container = null then
+         return No_Element;
+      end if;
+
+      if Position.Container /= Object.Container then
+         raise Program_Error with
+           "Position cursor of Previous designates wrong set";
+      end if;
+
+      return Previous (Position);
    end Previous;
 
    -------------------
@@ -1345,7 +1576,6 @@ package body Ada.Containers.Bounded_Ordered_Sets is
 
       declare
          S : Set renames Position.Container.all;
-
          B : Natural renames S.Busy;
          L : Natural renames S.Lock;
 
@@ -1407,6 +1637,14 @@ package body Ada.Containers.Bounded_Ordered_Sets is
       raise Program_Error with "attempt to stream set cursor";
    end Read;
 
+   procedure Read
+     (Stream : not null access Root_Stream_Type'Class;
+      Item   : out Constant_Reference_Type)
+   is
+   begin
+      raise Program_Error with "attempt to stream reference";
+   end Read;
+
    -------------
    -- Replace --
    -------------
@@ -1463,27 +1701,64 @@ package body Ada.Containers.Bounded_Ordered_Sets is
       function New_Node return Count_Type is
       begin
          Node.Element := Item;
-         Node.Color := Red_Black_Trees.Red;
-         Node.Parent := 0;
-         Node.Right := 0;
-         Node.Left := 0;
-
+         Node.Color   := Red_Black_Trees.Red;
+         Node.Parent  := 0;
+         Node.Right   := 0;
+         Node.Left    := 0;
          return Index;
       end New_Node;
 
       Hint      : Count_Type;
       Result    : Count_Type;
       Inserted  : Boolean;
+      Compare   : Boolean;
+
+      --  Per AI05-0022, the container implementation is required to detect
+      --  element tampering by a generic actual subprogram.
+
+      B : Natural renames Container.Busy;
+      L : Natural renames Container.Lock;
 
    --  Start of processing for Replace_Element
 
    begin
-      if Item < Node.Element
-        or else Node.Element < Item
-      then
-         null;
+      --  Replace_Element assigns value Item to the element designated by Node,
+      --  per certain semantic constraints, described as follows.
 
-      else
+      --  If Item is equivalent to the element, then element is replaced and
+      --  there's nothing else to do. This is the easy case.
+
+      --  If Item is not equivalent, then the node will (possibly) have to move
+      --  to some other place in the tree. This is slighly more complicated,
+      --  because we must ensure that Item is not equivalent to some other
+      --  element in the tree (in which case, the replacement is not allowed).
+
+      --  Determine whether Item is equivalent to element on the specified
+      --  node.
+
+      begin
+         B := B + 1;
+         L := L + 1;
+
+         Compare := (if Item < Node.Element then False
+                     elsif Node.Element < Item then False
+                     else True);
+
+         L := L - 1;
+         B := B - 1;
+
+      exception
+         when others =>
+            L := L - 1;
+            B := B - 1;
+            raise;
+      end;
+
+      if Compare then
+
+         --  Item is equivalent to the node's element, so we will not have to
+         --  move the node.
+
          if Container.Lock > 0 then
             raise Program_Error with
               "attempt to tamper with elements (set is locked)";
@@ -1493,12 +1768,67 @@ package body Ada.Containers.Bounded_Ordered_Sets is
          return;
       end if;
 
+      --  The replacement Item is not equivalent to the element on the
+      --  specified node, which means that it will need to be re-inserted in a
+      --  different position in the tree. We must now determine whether Item is
+      --  equivalent to some other element in the tree (which would prohibit
+      --  the assignment and hence the move).
+
+      --  Ceiling returns the smallest element equivalent or greater than the
+      --  specified Item; if there is no such element, then it returns 0.
+
       Hint := Element_Keys.Ceiling (Container, Item);
 
-      if Hint = 0 then
-         null;
+      if Hint /= 0 then  -- Item <= Nodes (Hint).Element
+         begin
+            B := B + 1;
+            L := L + 1;
 
-      elsif Item < Nodes (Hint).Element then
+            Compare := Item < Nodes (Hint).Element;
+
+            L := L - 1;
+            B := B - 1;
+
+         exception
+            when others =>
+               L := L - 1;
+               B := B - 1;
+               raise;
+         end;
+
+         --  Item is equivalent to Nodes (Hint).Element
+
+         if not Compare then
+
+            --  Ceiling returns an element that is equivalent or greater than
+            --  Item. If Item is "not less than" the element, then by
+            --  elimination we know that Item is equivalent to the element.
+
+            --  But this means that it is not possible to assign the value of
+            --  Item to the specified element (on Node), because a different
+            --  element (on Hint) equivalent to Item already exsits. (Were we
+            --  to change Node's element value, we would have to move Node, but
+            --  we would be unable to move the Node, because its new position
+            --  in the tree is already occupied by an equivalent element.)
+
+            raise Program_Error with "attempt to replace existing element";
+         end if;
+
+         --  Item is not equivalent to any other element in the tree
+         --  (specifically, it is less than Nodes (Hint).Element), so it is
+         --  safe to assign the value of Item to Node.Element. This means that
+         --  the node will have to move to a different position in the tree
+         --  (because its element will have a different value).
+
+         --  The nearest (greater) neighbor of Item is Hint. This will be the
+         --  insertion position of Node (because its element will have Item as
+         --  its new value).
+
+         --  If Node equals Hint, the relative position of Node does not
+         --  change. This allows us to perform an optimization: we need not
+         --  remove Node from the tree and then reinsert it with its new value,
+         --  because it would only be placed in the exact same position.
+
          if Hint = Index then
             if Container.Lock > 0 then
                raise Program_Error with
@@ -1508,11 +1838,13 @@ package body Ada.Containers.Bounded_Ordered_Sets is
             Node.Element := Item;
             return;
          end if;
-
-      else
-         pragma Assert (not (Nodes (Hint).Element < Item));
-         raise Program_Error with "attempt to replace existing element";
       end if;
+
+      --  If we get here, it is because Item was greater than all elements in
+      --  the tree (Hint = 0), or because Item was less than some element at a
+      --  different place in the tree (Item < Nodes (Hint).Element and Hint /=
+      --  Index). In either case, we remove Node from the tree and then insert
+      --  Item into the tree, onto the same Node.
 
       Tree_Operations.Delete_Node_Sans_Free (Container, Index);
 
@@ -1713,6 +2045,14 @@ package body Ada.Containers.Bounded_Ordered_Sets is
    is
    begin
       raise Program_Error with "attempt to stream set cursor";
+   end Write;
+
+   procedure Write
+     (Stream : not null access Root_Stream_Type'Class;
+      Item   : Constant_Reference_Type)
+   is
+   begin
+      raise Program_Error with "attempt to stream reference";
    end Write;
 
 end Ada.Containers.Bounded_Ordered_Sets;

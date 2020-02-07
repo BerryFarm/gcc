@@ -1,7 +1,5 @@
 /* Definitions for PA_RISC with ELF format
-   Copyright 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2009, 2010,
-   2011
-   Free Software Foundation, Inc.
+   Copyright (C) 1999-2014 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -24,7 +22,10 @@ along with GCC; see the file COPYING3.  If not see
 #define TARGET_OS_CPP_BUILTINS()		\
   do						\
     {						\
-	LINUX_TARGET_OS_CPP_BUILTINS();		\
+	builtin_define ("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_1");	\
+	builtin_define ("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_2");	\
+	builtin_define ("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_4");	\
+	GNU_USER_TARGET_OS_CPP_BUILTINS();	\
 	builtin_assert ("machine=bigendian");	\
     }						\
   while (0)
@@ -47,7 +48,7 @@ along with GCC; see the file COPYING3.  If not see
   %{!shared: \
     %{!static: \
       %{rdynamic:-export-dynamic} \
-      -dynamic-linker " LINUX_DYNAMIC_LINKER "} \
+      -dynamic-linker " GNU_USER_DYNAMIC_LINKER "} \
       %{static:-static}}"
 
 /* glibc's profiling functions don't need gcc to allocate counters.  */
@@ -80,17 +81,11 @@ along with GCC; see the file COPYING3.  If not see
 
 #undef ASM_OUTPUT_ADDR_VEC_ELT
 #define ASM_OUTPUT_ADDR_VEC_ELT(FILE, VALUE) \
-  if (TARGET_BIG_SWITCH)					\
-    fprintf (FILE, "\t.word .L%d\n", VALUE);			\
-  else								\
-    fprintf (FILE, "\tb .L%d\n\tnop\n", VALUE)
+  fprintf (FILE, "\t.word .L%d\n", VALUE)
 
 #undef ASM_OUTPUT_ADDR_DIFF_ELT
 #define ASM_OUTPUT_ADDR_DIFF_ELT(FILE, BODY, VALUE, REL) \
-  if (TARGET_BIG_SWITCH)					\
-    fprintf (FILE, "\t.word .L%d-.L%d\n", VALUE, REL);		\
-  else								\
-    fprintf (FILE, "\tb .L%d\n\tnop\n", VALUE)
+  fprintf (FILE, "\t.word .L%d-.L%d\n", VALUE, REL)
 
 /* Use the default.  */
 #undef ASM_OUTPUT_LABEL
@@ -128,11 +123,13 @@ along with GCC; see the file COPYING3.  If not see
   do								\
     {								\
       if (!FUNCTION_NAME_P (XSTR (FUN, 0)))			\
-	hppa_encode_label (FUN);				\
+	pa_encode_label (FUN);					\
       (*targetm.asm_out.globalize_label) (FILE, XSTR (FUN, 0));	\
     }								\
   while (0)
 
-/* Linux always uses gas.  */
 #undef TARGET_GAS
 #define TARGET_GAS 1
+
+#undef TARGET_SYNC_LIBCALL
+#define TARGET_SYNC_LIBCALL 1

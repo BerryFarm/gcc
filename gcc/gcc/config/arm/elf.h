@@ -1,7 +1,6 @@
 /* Definitions of target machine for GNU compiler.
    For ARM with ELF obj format.
-   Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2004, 2005, 2007,
-   2008 Free Software Foundation, Inc.
+   Copyright (C) 1995-2014 Free Software Foundation, Inc.
    Contributed by Philip Blundell <philb@gnu.org> and
    Catherine Moore <clm@cygnus.com>
    
@@ -17,8 +16,13 @@
    or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
    License for more details.
 
-   You should have received a copy of the GNU General Public License
-   along with GCC; see the file COPYING3.  If not see
+   Under Section 7 of GPL version 3, you are granted additional
+   permissions described in the GCC Runtime Library Exception, version
+   3.1, as published by the Free Software Foundation.
+
+   You should have received a copy of the GNU General Public License and
+   a copy of the GCC Runtime Library Exception along with this program;
+   see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
    <http://www.gnu.org/licenses/>.  */
 
 #ifndef OBJECT_FORMAT_ELF
@@ -56,12 +60,10 @@
 #define ASM_SPEC "\
 %{mbig-endian:-EB} \
 %{mlittle-endian:-EL} \
-%{mcpu=*:-mcpu=%*} \
-%{march=*:-march=%*} \
+%(asm_cpu_spec) \
 %{mapcs-*:-mapcs-%*} \
 %(subtarget_asm_float_spec) \
 %{mthumb-interwork:-mthumb-interwork} \
-%{msoft-float:-mfloat-abi=soft} %{mhard-float:-mfloat-abi=hard} \
 %{mfloat-abi=*} %{mfpu=*} \
 %(subtarget_extra_asm_spec)"
 #endif
@@ -109,17 +111,13 @@
 #endif
   
 /* Run-time Target Specification.  */
-#ifndef TARGET_VERSION
-#define TARGET_VERSION fputs (" (ARM/elf)", stderr)
-#endif
-
 #ifndef TARGET_DEFAULT
 #define TARGET_DEFAULT (MASK_APCS_FRAME)
 #endif
 
 #ifndef MULTILIB_DEFAULTS
 #define MULTILIB_DEFAULTS \
-  { "marm", "mlittle-endian", "msoft-float", "mno-thumb-interwork", "fno-leading-underscore" }
+  { "marm", "mlittle-endian", "mfloat-abi=soft", "mno-thumb-interwork", "fno-leading-underscore" }
 #endif
 
 #define TARGET_ASM_FILE_START_APP_OFF true

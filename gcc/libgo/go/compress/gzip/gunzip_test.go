@@ -7,8 +7,10 @@ package gzip
 import (
 	"bytes"
 	"io"
+	"io/ioutil"
 	"os"
 	"testing"
+	"time"
 )
 
 type gunzipTest struct {
@@ -16,7 +18,7 @@ type gunzipTest struct {
 	desc string
 	raw  string
 	gzip []byte
-	err  os.Error
+	err  error
 }
 
 var gunzipTests = []gunzipTest{
@@ -233,7 +235,7 @@ var gunzipTests = []gunzipTest{
 			0x02, 0x00, 0x2d, 0x3b, 0x08, 0xaf, 0x0c, 0x00,
 			0x00, 0x00, 'g', 'a', 'r', 'b', 'a', 'g', 'e', '!', '!', '!',
 		},
-		HeaderError,
+		ErrHeader,
 	},
 	{ // has 1 non-empty fixed huffman block not enough header
 		"hello.txt",
@@ -261,7 +263,7 @@ var gunzipTests = []gunzipTest{
 			0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0x0c, 0x00,
 			0x00, 0x00,
 		},
-		ChecksumError,
+		ErrChecksum,
 	},
 	{ // has 1 non-empty fixed huffman block but corrupt size
 		"hello.txt",
@@ -275,7 +277,7 @@ var gunzipTests = []gunzipTest{
 			0x02, 0x00, 0x2d, 0x3b, 0x08, 0xaf, 0xff, 0x00,
 			0x00, 0x00,
 		},
-		ChecksumError,
+		ErrChecksum,
 	},
 }
 
@@ -301,5 +303,33 @@ func TestDecompressor(t *testing.T) {
 		if s != tt.raw {
 			t.Errorf("%s: got %d-byte %q want %d-byte %q", tt.name, n, s, len(tt.raw), tt.raw)
 		}
+	}
+}
+
+func TestIssue6550(t *testing.T) {
+	f, err := os.Open("testdata/issue6550.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gzip, err := NewReader(f)
+	if err != nil {
+		t.Fatalf("NewReader(testdata/issue6550.gz): %v", err)
+	}
+	defer gzip.Close()
+	done := make(chan bool, 1)
+	go func() {
+		_, err := io.Copy(ioutil.Discard, gzip)
+		if err == nil {
+			t.Errorf("Copy succeeded")
+		} else {
+			t.Logf("Copy failed (correctly): %v", err)
+		}
+		done <- true
+	}()
+	select {
+	case <-time.After(1 * time.Second):
+		t.Errorf("Copy hung")
+	case <-done:
+		// ok
 	}
 }

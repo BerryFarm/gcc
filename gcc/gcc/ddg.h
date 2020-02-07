@@ -1,6 +1,5 @@
 /* DDG - Data Dependence Graph - interface.
-   Copyright (C) 2004, 2005, 2006, 2007, 2008
-   Free Software Foundation, Inc.
+   Copyright (C) 2004-2014 Free Software Foundation, Inc.
    Contributed by Ayal Zaks and Mustafa Hagog <zaks,mustafa@il.ibm.com>
 
 This file is part of GCC.
@@ -34,9 +33,8 @@ typedef struct ddg *ddg_ptr;
 typedef struct ddg_scc *ddg_scc_ptr;
 typedef struct ddg_all_sccs *ddg_all_sccs_ptr;
 
-typedef enum {TRUE_DEP, OUTPUT_DEP, ANTI_DEP} dep_type;
-typedef enum {REG_OR_MEM_DEP, REG_DEP, MEM_DEP, REG_AND_MEM_DEP}
-	     dep_data_type;
+enum dep_type {TRUE_DEP, OUTPUT_DEP, ANTI_DEP};
+enum dep_data_type {REG_OR_MEM_DEP, REG_DEP, MEM_DEP, REG_AND_MEM_DEP};
 
 /* The following two macros enables direct access to the successors and
    predecessors bitmaps held in each ddg_node.  Do not make changes to
@@ -185,5 +183,7 @@ void free_ddg_all_sccs (ddg_all_sccs_ptr);
 
 int find_nodes_on_paths (sbitmap result, ddg_ptr, sbitmap from, sbitmap to);
 int longest_simple_path (ddg_ptr, int from, int to, sbitmap via);
+
+bool autoinc_var_is_used_p (rtx, rtx);
 
 #endif /* GCC_DDG_H */

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2010, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -31,6 +31,7 @@
 
 with Ada.Exceptions;
 with Ada.Unchecked_Conversion;
+
 with System.HTable;
 with System.Storage_Elements; use System.Storage_Elements;
 with System.WCh_Con;          use System.WCh_Con;
@@ -58,7 +59,8 @@ package body Ada.Tags is
 
    function Length (Str : Cstring_Ptr) return Natural;
    --  Length of string represented by the given pointer (treating the string
-   --  as a C-style string, which is Nul terminated).
+   --  as a C-style string, which is Nul terminated). See comment in body
+   --  explaining why we cannot use the normal strlen built-in.
 
    function OSD (T : Tag) return Object_Specific_Data_Ptr;
    --  Ada 2005 (AI-251): Given a pointer T to a secondary dispatch table,
@@ -139,13 +141,13 @@ package body Ada.Tags is
 
    function CW_Membership (Obj_Tag : Tag; Typ_Tag : Tag) return Boolean is
       Obj_TSD_Ptr : constant Addr_Ptr :=
-                     To_Addr_Ptr (To_Address (Obj_Tag) - DT_Typeinfo_Ptr_Size);
+        To_Addr_Ptr (To_Address (Obj_Tag) - DT_Typeinfo_Ptr_Size);
       Typ_TSD_Ptr : constant Addr_Ptr :=
-                     To_Addr_Ptr (To_Address (Typ_Tag) - DT_Typeinfo_Ptr_Size);
+        To_Addr_Ptr (To_Address (Typ_Tag) - DT_Typeinfo_Ptr_Size);
       Obj_TSD     : constant Type_Specific_Data_Ptr :=
-                     To_Type_Specific_Data_Ptr (Obj_TSD_Ptr.all);
+        To_Type_Specific_Data_Ptr (Obj_TSD_Ptr.all);
       Typ_TSD     : constant Type_Specific_Data_Ptr :=
-                     To_Type_Specific_Data_Ptr (Typ_TSD_Ptr.all);
+        To_Type_Specific_Data_Ptr (Typ_TSD_Ptr.all);
       Pos         : constant Integer := Obj_TSD.Idepth - Typ_TSD.Idepth;
    begin
       return Pos >= 0 and then Obj_TSD.Tags_Table (Pos) = Typ_Tag;
@@ -157,9 +159,9 @@ package body Ada.Tags is
 
    function Get_External_Tag (T : Tag) return System.Address is
       TSD_Ptr : constant Addr_Ptr :=
-                  To_Addr_Ptr (To_Address (T) - DT_Typeinfo_Ptr_Size);
+        To_Addr_Ptr (To_Address (T) - DT_Typeinfo_Ptr_Size);
       TSD     : constant Type_Specific_Data_Ptr :=
-                  To_Type_Specific_Data_Ptr (TSD_Ptr.all);
+        To_Type_Specific_Data_Ptr (TSD_Ptr.all);
    begin
       return To_Address (TSD.External_Tag);
    end Get_External_Tag;
@@ -241,8 +243,9 @@ package body Ada.Tags is
       function Equal (A, B : System.Address) return Boolean is
          Str1 : constant Cstring_Ptr := To_Cstring_Ptr (A);
          Str2 : constant Cstring_Ptr := To_Cstring_Ptr (B);
-         J    : Integer := 1;
+         J    : Integer;
       begin
+         J := 1;
          loop
             if Str1 (J) /= Str2 (J) then
                return False;
@@ -303,29 +306,61 @@ package body Ada.Tags is
       return This - Offset_To_Top (This);
    end Base_Address;
 
+   ---------------
+   -- Check_TSD --
+   ---------------
+
+   procedure Check_TSD (TSD : Type_Specific_Data_Ptr) is
+      T : Tag;
+
+      E_Tag_Len : constant Integer := Length (TSD.External_Tag);
+      E_Tag     : String (1 .. E_Tag_Len);
+      for E_Tag'Address use TSD.External_Tag.all'Address;
+      pragma Import (Ada, E_Tag);
+
+      Dup_Ext_Tag : constant String := "duplicated external tag """;
+
+   begin
+      --  Verify that the external tag of this TSD is not registered in the
+      --  runtime hash table.
+
+      T := External_Tag_HTable.Get (To_Address (TSD.External_Tag));
+
+      if T /= null then
+
+         --  Avoid concatenation, as it is not allowed in no run time mode
+
+         declare
+            Msg : String (1 .. Dup_Ext_Tag'Length + E_Tag_Len + 1);
+         begin
+            Msg (1 .. Dup_Ext_Tag'Length) := Dup_Ext_Tag;
+            Msg (Dup_Ext_Tag'Length + 1 .. Dup_Ext_Tag'Length + E_Tag_Len) :=
+              E_Tag;
+            Msg (Msg'Last) := '"';
+            raise Program_Error with Msg;
+         end;
+      end if;
+   end Check_TSD;
+
    --------------------
    -- Descendant_Tag --
    --------------------
 
    function Descendant_Tag (External : String; Ancestor : Tag) return Tag is
       Int_Tag : constant Tag := Internal_Tag (External);
-
    begin
       if not Is_Descendant_At_Same_Level (Int_Tag, Ancestor) then
          raise Tag_Error;
+      else
+         return Int_Tag;
       end if;
-
-      return Int_Tag;
    end Descendant_Tag;
 
    --------------
    -- Displace --
    --------------
 
-   function Displace
-     (This : System.Address;
-      T    : Tag) return System.Address
-   is
+   function Displace (This : System.Address; T : Tag) return System.Address is
       Iface_Table : Interface_Data_Ptr;
       Obj_Base    : System.Address;
       Obj_DT      : Dispatch_Table_Ptr;
@@ -511,19 +546,6 @@ package body Ada.Tags is
       end if;
    end Get_Offset_Index;
 
-   -------------------
-   -- Get_RC_Offset --
-   -------------------
-
-   function Get_RC_Offset (T : Tag) return SSE.Storage_Offset is
-      TSD_Ptr : constant Addr_Ptr :=
-                  To_Addr_Ptr (To_Address (T) - DT_Typeinfo_Ptr_Size);
-      TSD     : constant Type_Specific_Data_Ptr :=
-                  To_Type_Specific_Data_Ptr (TSD_Ptr.all);
-   begin
-      return TSD.RC_Offset;
-   end Get_RC_Offset;
-
    ---------------------
    -- Get_Tagged_Kind --
    ---------------------
@@ -551,6 +573,7 @@ package body Ada.Tags is
          begin
             return Table;
          end;
+
       else
          declare
             Table : Tag_Array (1 .. Iface_Table.Nb_Ifaces);
@@ -583,9 +606,9 @@ package body Ada.Tags is
 
       if External'Length > Internal_Tag_Header'Length
         and then
-         External (External'First ..
-                     External'First + Internal_Tag_Header'Length - 1)
-           = Internal_Tag_Header
+          External (External'First ..
+                      External'First + Internal_Tag_Header'Length - 1) =
+                                                        Internal_Tag_Header
       then
          declare
             Addr_First : constant Natural :=
@@ -695,14 +718,13 @@ package body Ada.Tags is
       Ancestor   : Tag) return Boolean
    is
       D_TSD_Ptr : constant Addr_Ptr :=
-                    To_Addr_Ptr (To_Address (Descendant)
-                                   - DT_Typeinfo_Ptr_Size);
+        To_Addr_Ptr (To_Address (Descendant) - DT_Typeinfo_Ptr_Size);
       A_TSD_Ptr : constant Addr_Ptr :=
-                    To_Addr_Ptr (To_Address (Ancestor) - DT_Typeinfo_Ptr_Size);
+        To_Addr_Ptr (To_Address (Ancestor) - DT_Typeinfo_Ptr_Size);
       D_TSD     : constant Type_Specific_Data_Ptr :=
-                    To_Type_Specific_Data_Ptr (D_TSD_Ptr.all);
+        To_Type_Specific_Data_Ptr (D_TSD_Ptr.all);
       A_TSD     : constant Type_Specific_Data_Ptr :=
-                    To_Type_Specific_Data_Ptr (A_TSD_Ptr.all);
+        To_Type_Specific_Data_Ptr (A_TSD_Ptr.all);
 
    begin
       return CW_Membership (Descendant, Ancestor)
@@ -712,6 +734,11 @@ package body Ada.Tags is
    ------------
    -- Length --
    ------------
+
+   --  Note: This unit is used in the Ravenscar runtime library, so it cannot
+   --  depend on System.CTRL. Furthermore, this happens on CPUs where the GCC
+   --  intrinsic strlen may not be available, so we need to recode our own Ada
+   --  version here.
 
    function Length (Str : Cstring_Ptr) return Natural is
       Len : Integer;
@@ -751,6 +778,19 @@ package body Ada.Tags is
       end if;
    end Offset_To_Top;
 
+   ------------------------
+   -- Needs_Finalization --
+   ------------------------
+
+   function Needs_Finalization (T : Tag) return Boolean is
+      TSD_Ptr : constant Addr_Ptr :=
+                  To_Addr_Ptr (To_Address (T) - DT_Typeinfo_Ptr_Size);
+      TSD     : constant Type_Specific_Data_Ptr :=
+                  To_Type_Specific_Data_Ptr (TSD_Ptr.all);
+   begin
+      return TSD.Needs_Finalization;
+   end Needs_Finalization;
+
    -----------------
    -- Parent_Size --
    -----------------
@@ -771,10 +811,9 @@ package body Ada.Tags is
 
       Parent_Tag     : constant Tag := TSD.Tags_Table (Parent_Slot);
       Parent_TSD_Ptr : constant Addr_Ptr :=
-                         To_Addr_Ptr (To_Address (Parent_Tag)
-                                       - DT_Typeinfo_Ptr_Size);
+        To_Addr_Ptr (To_Address (Parent_Tag) - DT_Typeinfo_Ptr_Size);
       Parent_TSD     : constant Type_Specific_Data_Ptr :=
-                         To_Type_Specific_Data_Ptr (Parent_TSD_Ptr.all);
+        To_Type_Specific_Data_Ptr (Parent_TSD_Ptr.all);
 
    begin
       --  Here we compute the size of the _parent field of the object
@@ -923,6 +962,7 @@ package body Ada.Tags is
    is
       Sec_Base : System.Address;
       Sec_DT   : Dispatch_Table_Ptr;
+
    begin
       --  Save the offset to top field in the secondary dispatch table
 
@@ -966,6 +1006,15 @@ package body Ada.Tags is
       TSD     := To_Type_Specific_Data_Ptr (TSD_Ptr.all);
       return TSD.Type_Is_Abstract;
    end Type_Is_Abstract;
+
+   --------------------
+   -- Unregister_Tag --
+   --------------------
+
+   procedure Unregister_Tag (T : Tag) is
+   begin
+      External_Tag_HTable.Remove (Get_External_Tag (T));
+   end Unregister_Tag;
 
    ------------------------
    -- Wide_Expanded_Name --

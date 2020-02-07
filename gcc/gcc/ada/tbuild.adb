@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2010, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -129,6 +129,15 @@ package body Tbuild is
       end if;
    end Convert_To;
 
+   ----------------------------
+   -- Convert_To_And_Rewrite --
+   ----------------------------
+
+   procedure Convert_To_And_Rewrite (Typ : Entity_Id; Expr : Node_Id) is
+   begin
+      Rewrite (Expr, Convert_To (Typ, Expr));
+   end Convert_To_And_Rewrite;
+
    ------------------
    -- Discard_List --
    ------------------
@@ -165,9 +174,8 @@ package body Tbuild is
               Attribute_Name => Attribute_Name);
 
    begin
-      pragma Assert (Attribute_Name = Name_Address
-                       or else
-                     Attribute_Name = Name_Unrestricted_Access);
+      pragma Assert (Nam_In (Attribute_Name, Name_Address,
+                                             Name_Unrestricted_Access));
       Set_Must_Be_Byte_Aligned (N, True);
       return N;
    end Make_Byte_Aligned_Attribute_Reference;
@@ -195,7 +203,7 @@ package body Tbuild is
           Make_Selected_Component (Loc,
             Prefix => New_Copy (Rec),
             Selector_Name =>
-              New_Reference_To (First_Tag_Component (Full_Type), Loc)));
+              New_Occurrence_Of (First_Tag_Component (Full_Type), Loc)));
    end Make_DT_Access;
 
    ------------------------
@@ -388,14 +396,12 @@ package body Tbuild is
    function Make_Pragma
      (Sloc                         : Source_Ptr;
       Chars                        : Name_Id;
-      Pragma_Argument_Associations : List_Id := No_List;
-      Debug_Statement              : Node_Id := Empty) return Node_Id
+      Pragma_Argument_Associations : List_Id := No_List) return Node_Id
    is
    begin
       return
         Make_Pragma (Sloc,
           Pragma_Argument_Associations => Pragma_Argument_Associations,
-          Debug_Statement              => Debug_Statement,
           Pragma_Identifier            => Make_Identifier (Sloc, Chars));
    end Make_Pragma;
 
@@ -643,6 +649,7 @@ package body Tbuild is
      (Def_Id : Entity_Id;
       Loc    : Source_Ptr) return Node_Id
    is
+      pragma Assert (Present (Def_Id) and then Nkind (Def_Id) in N_Entity);
       Occurrence : Node_Id;
 
    begin
@@ -711,22 +718,6 @@ package body Tbuild is
       return Nod;
    end New_Op_Node;
 
-   ----------------------
-   -- New_Reference_To --
-   ----------------------
-
-   function New_Reference_To
-     (Def_Id : Entity_Id;
-      Loc    : Source_Ptr) return Node_Id
-   is
-      Occurrence : Node_Id;
-   begin
-      Occurrence := New_Node (N_Identifier, Loc);
-      Set_Chars (Occurrence, Chars (Def_Id));
-      Set_Entity (Occurrence, Def_Id);
-      return Occurrence;
-   end New_Reference_To;
-
    -----------------------
    -- New_Suffixed_Name --
    -----------------------
@@ -766,8 +757,9 @@ package body Tbuild is
      (Typ  : Entity_Id;
       Expr : Node_Id) return Node_Id
    is
-      Loc    : constant Source_Ptr := Sloc (Expr);
-      Result : Node_Id;
+      Loc         : constant Source_Ptr := Sloc (Expr);
+      Result      : Node_Id;
+      Expr_Parent : Node_Id;
 
    begin
       --  If the expression is already of the correct type, then nothing
@@ -797,10 +789,18 @@ package body Tbuild is
       --  All other cases
 
       else
+         --  Capture the parent of the expression before relocating it and
+         --  creating the conversion, so the conversion's parent can be set
+         --  to the original parent below.
+
+         Expr_Parent := Parent (Expr);
+
          Result :=
            Make_Unchecked_Type_Conversion (Loc,
              Subtype_Mark => New_Occurrence_Of (Typ, Loc),
              Expression   => Relocate_Node (Expr));
+
+         Set_Parent (Result, Expr_Parent);
       end if;
 
       Set_Etype (Result, Typ);

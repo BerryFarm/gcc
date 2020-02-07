@@ -1,6 +1,5 @@
 /* Definitions of target machine for GNU compiler, for MIPS NetBSD systems.
-   Copyright (C) 1993, 1995, 1996, 1997, 1999, 2000, 2001, 2002, 2003, 2004,
-   2007, 2010, 2011 Free Software Foundation, Inc.
+   Copyright (C) 1993-2014 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -21,13 +20,6 @@ along with GCC; see the file COPYING3.  If not see
 
 /* Define default target values.  */
 
-#undef MACHINE_TYPE
-#if TARGET_ENDIAN_DEFAULT != 0
-#define MACHINE_TYPE "NetBSD/mipseb ELF"
-#else
-#define MACHINE_TYPE "NetBSD/mipsel ELF"
-#endif
-
 #define TARGET_OS_CPP_BUILTINS()			\
   do							\
     {							\
@@ -40,7 +32,9 @@ along with GCC; see the file COPYING3.  If not see
       if (TARGET_ABICALLS)				\
 	builtin_define ("__ABICALLS__");		\
 							\
-      if (mips_abi == ABI_EABI)				\
+      if (mips_abi == ABI_32)				\
+	builtin_define ("__mips_o32");			\
+      else if (mips_abi == ABI_EABI)			\
 	builtin_define ("__mips_eabi");			\
       else if (mips_abi == ABI_N32)			\
 	builtin_define ("__mips_n32");			\

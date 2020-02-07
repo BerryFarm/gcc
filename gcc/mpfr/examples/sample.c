@@ -3,14 +3,14 @@
  */
 
 /*
-Copyright 1999, 2000, 2001, 2002, 2003, 2004, 2006, 2007, 2008, 2009 Free Software Foundation, Inc.
-Contributed by the Arenaire and Cacao projects, INRIA.
+Copyright 1999-2004, 2006-2017 Free Software Foundation, Inc.
+Contributed by the AriC and Caramba projects, INRIA.
 
 This file is part of the GNU MPFR Library.
 
 The GNU MPFR Library is free software; you can redistribute it and/or modify
 it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or (at your
+the Free Software Foundation; either version 3 of the License, or (at your
 option) any later version.
 
 The GNU MPFR Library is distributed in the hope that it will be useful, but
@@ -19,9 +19,9 @@ or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public
 License for more details.
 
 You should have received a copy of the GNU Lesser General Public License
-along with the GNU MPFR Library; see the file COPYING.LIB.  If not, write to
-the Free Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
-MA 02110-1301, USA.
+along with the GNU MPFR Library; see the file COPYING.LESSER.  If not, see
+http://www.gnu.org/licenses/ or write to the Free Software Foundation, Inc.,
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 */
 
 #include <stdio.h>
@@ -35,19 +35,19 @@ int main (void)
   mpfr_t s, t, u;
 
   mpfr_init2 (t, 200);
-  mpfr_set_d (t, 1.0, GMP_RNDD);
+  mpfr_set_d (t, 1.0, MPFR_RNDD);
   mpfr_init2 (s, 200);
-  mpfr_set_d (s, 1.0, GMP_RNDD);
+  mpfr_set_d (s, 1.0, MPFR_RNDD);
   mpfr_init2 (u, 200);
   for (i = 1; i <= 100; i++)
     {
-      mpfr_mul_ui (t, t, i, GMP_RNDU);
-      mpfr_set_d (u, 1.0, GMP_RNDD);
-      mpfr_div (u, u, t, GMP_RNDD);
-      mpfr_add (s, s, u, GMP_RNDD);
+      mpfr_mul_ui (t, t, i, MPFR_RNDU);
+      mpfr_set_d (u, 1.0, MPFR_RNDD);
+      mpfr_div (u, u, t, MPFR_RNDD);
+      mpfr_add (s, s, u, MPFR_RNDD);
     }
   printf ("Sum is ");
-  mpfr_out_str (stdout, 10, 0, s, GMP_RNDD);
+  mpfr_out_str (stdout, 10, 0, s, MPFR_RNDD);
   putchar ('\n');
   mpfr_clear (s);
   mpfr_clear (t);
